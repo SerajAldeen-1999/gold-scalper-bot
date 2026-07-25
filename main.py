@@ -26,9 +26,9 @@ def keep_alive():
     t.daemon = True
     t.start()
 
-# 2. قراءة المفاتيح المحمية من بيئة التشغيل
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+# 2. إعداد المفاتيح مباشرة لتفادي أي خطأ في متغيرات Render
+BOT_TOKEN = "8672708333:AAFLEBR1AwNWHPMAa9SzXyOl8Gk9nsgMLjg"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 SYMBOL = "XAUUSD"
 
 # تهيئة مكتبة Google Gemini
