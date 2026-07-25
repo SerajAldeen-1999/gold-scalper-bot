@@ -1,4 +1,5 @@
 import os
+import io
 import asyncio
 from datetime import datetime
 import pytz
@@ -6,13 +7,15 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from flask import Flask
 from threading import Thread
+import google.generativeai as genai
+from PIL import Image
 
-# 1. خادم إبقاء الخدمة حية 24/7 على Render
+# 1. إعداد خادم إبقاء الخدمة حية 24/7 على Render
 app_web = Flask('')
 
 @app_web.route('/')
 def home():
-    return "Bot is running 24/7!"
+    return "Bot is running 24/7 with Gemini AI!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -23,9 +26,14 @@ def keep_alive():
     t.daemon = True
     t.start()
 
-# 2. إعدادات التوكن والرمز
+# 2. إعداد مفاتيح التلجرام والذكاء الاصطناعي Gemini
 BOT_TOKEN = "8672708333:AAFLEBR1AwNWHPMAa9SzXyOl8Gk9nsgMLjg"
+GEMINI_API_KEY = "AQ.Ab8RN6KJ0_Fa_ONXd-nMlbPKcsrk5bxlYpUQh10ErLBzf6v9fA"
 SYMBOL = "XAUUSD"
+
+# تهيئة مكتبة Google Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 # 3. فحص أوقات السوق
 def is_market_open() -> tuple[bool, str]:
@@ -53,7 +61,7 @@ main_keyboard = [
 markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_msg = "أهلاً بك في منظومة سكالبينج الذهب (XAUUSD) 🔱\nاختر من الأزرار بالأسفل:"
+    welcome_msg = "أهلاً بك في منظومة سكالبينج الذهب (XAUUSD) المدعومة بالذكاء الاصطناعي Gemini 🔱\nاختر من الأزرار بالأسفل:"
     await update.message.reply_text(welcome_msg, reply_markup=markup)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -64,29 +72,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_open:
             await update.message.reply_text(f"🔴 {reason}")
         else:
-            await update.message.reply_text("🟢 السوق مفتوح! جاري فحص الفرص والسيولة...")
+            await update.message.reply_text("🟢 السوق مفتوح! يمكنك إرسال صورة الشارت الآن لتحليل الفرص والسيولة بالذكاء الاصطناعي.")
     elif text == "📈 تحليل صورة الشارت":
-        await update.message.reply_text("📸 أرسل صورة الشارت (M1/M5) ليتم تحليلها بالذكاء الاصطناعي.")
+        await update.message.reply_text("📸 أرسل صورة الشارت (فريم M1 أو M5) وسيقوم الذكاء الاصطناعي Gemini بفحصها فوراً!")
     elif text == "⚙️ حالة البوت والرمز":
         status_icon = "🟢" if is_open else "🔴"
-        await update.message.reply_text(f"{status_icon} البوت يعمل بنجاح.\n📌 الرمز: {SYMBOL}\n⏱ الفريم: M1\n⚪️ حالة السوق: {reason}")
+        await update.message.reply_text(f"{status_icon} البوت يعمل بنجاح 24/7.\n📌 الرمز: {SYMBOL}\n🧠 الذكاء الاصطناعي: Gemini Flash متصل\n⚪️ حالة السوق: {reason}")
     else:
         await update.message.reply_text("يرجى استخدام الأزرار بالأسفل.", reply_markup=markup)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📸 تم استقبال صورة الشارت بنجاح!\n🔎 جاري التحليل بواسطة الذكاء الاصطناعي...")
-    analysis_result = (
-        "📊 **نتائج تحليل الشارت (XAUUSD):**\n\n"
-        "🔹 **الاتجاه العام:** صاعد على فريم M1/M5\n"
-        "🔹 **مستويات الدعم القريبة:** 2380.50 - 2382.00\n"
-        "🔹 **مستويات المقاومة القريبة:** 2390.00 - 2392.50\n\n"
-        "💡 **توصية السكالبينج المقترحة:**\n"
-        "• نوع الصفقة: شراء (BUY) عند الارتداد من الدعم\n"
-        "• الهدف (TP): 2388.00\n"
-        "• وقف الخسارة (SL): 2378.50\n"
-        "⚠️ التزم باللوت المحدد (0.01) لإدارة المخاطر."
-    )
-    await update.message.reply_text(analysis_result, parse_mode='Markdown')
+    await update.message.reply_text("📸 تم استلام صورة الشارت! جاري التحليل بواسطة محرك Gemini للذكاء الاصطناعي... ⏳")
+    
+    try:
+        # تحميل الصورة المستلمة
+        photo_file = await update.message.photo[-1].get_file()
+        photo_bytes = await photo_file.download_as_bytearray()
+        image = Image.open(io.BytesIO(photo_bytes))
+        
+        # التوجيه التحليلي المخصص للسكالبينج
+        prompt = (
+            "أنت خبير تداول متقدم ومختص في إستراتيجيات السكالبينج لسوق الذهب (XAUUSD).\n"
+            "قم بتحليل صورة الشارت المرفقة بدقة عالية واستخرج ما يلي بلغة عربية واضحة ومباشرة:\n\n"
+            "1. الاتجاه الحالي (Trend): صاعد / هابط / عرضي.\n"
+            "2. أهم مستويات الدعم والمقاومة القريبة المرئية في الشارت.\n"
+            "3. نمط الشموع أو الهيكل الملاحظ (مثل: ارتداد، كسر، نموذج فني).\n"
+            "4. توصية سكالبينج واضحة (شراء BUY / بيع SELL / الانتظار).\n"
+            "5. تحديد مقترح لنقطة الدخول، الهدف (TP)، ووقف الخسارة (SL).\n\n"
+            "اجعل الإجابة مرتبة في نقاط واضحة ومختصرة لتناسب التداول السريع."
+        )
+        
+        # إرسال الصورة والتعليمات لـ Gemini AI
+        response = model.generate_content([prompt, image])
+        
+        # إرسال النتيجة للمستخدم
+        await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي (Gemini):**\n\n{response.text}", parse_mode='Markdown')
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ حدث خطأ أثناء تحليل الصورة: {str(e)}\nيرجى إعادة المحاولة بصورة أوضح.")
 
 if __name__ == '__main__':
     keep_alive()
@@ -96,5 +119,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
-    print("جاري تشغيل البوت على Render 24/7...")
+    print("جاري تشغيل البوت الذكي على Render 24/7...")
     app.run_polling()
