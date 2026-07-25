@@ -7,7 +7,7 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKe
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from flask import Flask
 from threading import Thread
-import google.generativeai as genai
+from google import genai
 from PIL import Image
 
 # إعداد السجلات
@@ -38,40 +38,31 @@ BOT_TOKEN = "8672708333:AAFLEBR1AwNWHPMAa9SzXyOl8Gk9nsgMLjg"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 SYMBOL = "XAUUSD"
 
-# إعداد Gemini
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
-else:
-    model = None
+# تهيئة عميل Gemini حسب المكتبة الحديثة
+ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-# متغيرات حالة التداول (Trade State)
+# متغيرات حالة التداول
 user_states = {
-    "active_chat_id": None,     # معرف الشات لإرسال الإشعارات التلقائية
-    "in_trade": False,           # هل المستخدم داخل صفقة حالياً؟
-    "pending_warning": False,    # هل تم إرسال إشعار تحضيري؟
-    "current_trade_info": None   # تفاصيل الصفقة الحالية
+    "active_chat_id": None,
+    "in_trade": False,
+    "pending_warning": False
 }
 
 # ---------------------------------------------------------
-# 3. فحص دقيق لأوقات سوق الذهب (بتوقيت نيويورك EST/EDT)
+# 3. فحص أوقات السوق (نيويورك)
 # ---------------------------------------------------------
 def is_market_open() -> tuple[bool, str]:
     ny_tz = pytz.timezone("America/New_York")
     now_ny = datetime.now(ny_tz)
-    weekday = now_ny.weekday() # 0 = Monday, 5 = Saturday, 6 = Sunday
+    weekday = now_ny.weekday()
     hour = now_ny.hour
 
-    # الجمعة بعد الساعة 5 مساءً بتوقيت نيويورك يغلق السوق
     if weekday == 4 and hour >= 17:
         return False, "السوق مغلق حالياً (إجازة نهاية الأسبوع - يفتح الأحد 6:00 م بتوقيت نيويورك)."
-    # السبت مغلق بالكامل
     if weekday == 5:
         return False, "السوق مغلق حالياً (إجازة نهاية الأسبوع - السبت)."
-    # الأحد مغلق حتى الساعة 6 مساءً بتوقيت نيويورك
     if weekday == 6 and hour < 18:
         return False, "السوق مغلق حالياً (إجازة نهاية الأسبوع - يفتح اليوم الساعة 6:00 م بتوقيت نيويورك)."
-    # فترة التسوية Daily Break اليومية (من 5:00 م إلى 6:00 م بتوقيت نيويورك)
     if weekday in [0, 1, 2, 3] and hour == 17:
         return False, "السوق مغلق حالياً لفترة التسوية اليومية (ساعة واحدة)."
 
@@ -88,7 +79,7 @@ markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    user_states["active_chat_id"] = chat_id # تسجيل معرف الشات للإشعارات التلقائية
+    user_states["active_chat_id"] = chat_id
     
     welcome_msg = (
         "أهلاً بك في نظام سكالبينج الذهب الأوتوماتيكي (XAUUSD) 🔱\n\n"
@@ -132,11 +123,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر Gemini AI
+# 5. تحليل الصور عبر Gemini AI (المكتبة المحدثة)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not GEMINI_API_KEY:
-        await update.message.reply_text("❌ مفتاح Gemini API غير مضاف في Environment Variables على Render.")
+    if not ai_client:
+        await update.message.reply_text("❌ مفتاح GEMINI_API_KEY غير صحيح أو غير مضاف في Environment Variables على Render.")
         return
 
     await update.message.reply_text("📸 تم استلام الشارت! جاري التحليل المتقدم بواسطة Gemini AI... ⏳")
@@ -147,19 +138,24 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         image = Image.open(io.BytesIO(photo_bytes))
 
         prompt = (
-            "أنت خبير سكالبينج متقدم على الذهب (XAUUSD).\n"
-            "قم بتحليل الشارت المرفق واستخرج بوضوح:\n"
-            "1. اتجاه السعر (Trend).\n"
-            "2. مناطق الدعم والمقاومة المرئية.\n"
-            "3. التوصية المقترحة (BUY / SELL / WAIT).\n"
-            "4. مقترح نقاط الدخول، TP، و SL بدقة عالية."
+            "أنت خبير تداول متقدم ومختص في إستراتيجيات السكالبينج لسوق الذهب (XAUUSD).\n"
+            "قم بتحليل صورة الشارت المرفقة بدقة عالية واستخرج النتائج التالية بلغة عربية واضحة ومباشرة:\n\n"
+            "1. الاتجاه الحالي (Trend): صاعد / هابط / عرضي.\n"
+            "2. مستويات الدعم والمقاومة القريبة المرئية.\n"
+            "3. حركة المؤشرات الشائعة إن وجدت (مثل RSI / MACD / الشموع).\n"
+            "4. التوصية المقترحة: (شراء BUY / بيع SELL / الانتظار) مع ذكر السبب باختصار شديد.\n"
+            "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
-        response = model.generate_content([prompt, image])
-        await update.message.reply_text(f"📊 **تحليل الشارت (Gemini AI):**\n\n{response.text}", parse_mode='Markdown')
+        response = ai_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt, image]
+        )
+        
+        await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي (Gemini):**\n\n{response.text}", parse_mode='Markdown')
 
     except Exception as e:
-        await update.message.reply_text(f"❌ حدث خطأ أثناء تحليل الصورة: {str(e)}")
+        await update.message.reply_text(f"❌ حدث خطأ أثناء تحليل الصورة: {str(e)}\nيرجى التأكد من صحة API Key وإعادة المحاولة.")
 
 # ---------------------------------------------------------
 # 6. المراقبة الآلية في الكواليس (كل 15 دقيقة)
@@ -167,21 +163,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def market_scanner_job(context: ContextTypes.DEFAULT_TYPE):
     chat_id = user_states["active_chat_id"]
     if not chat_id:
-        return # لم يبدأ المستخدم البوت بعد
+        return
 
     is_open, reason = is_market_open()
     
-    # 1. إذا كان السوق مغلقاً أو المستخدم داخل صفقة مفعلة، يتوقف البحث المؤقت
     if not is_open or user_states["in_trade"]:
         return
 
-    # 2. فحص محاكاة السيولة والفرص (يمكن ربطها مستقبلاً بـ API أسعار حقيقية)
-    # في هذه الحالة، البوت يفحص شروط السكالبينج كل 15 دقيقة:
-    
     if not user_states["pending_warning"]:
-        # إرسال إشعار تحضيري قبل الصفقة بـ 5 دقائق
         user_states["pending_warning"] = True
-        
         warning_text = (
             "⏳ **تنبيه تحضيري (قبل الصفقة بـ 5 دقائق):**\n\n"
             "🔥 تم كشف سيولة متزايدة وتقارب في مؤشرات السكالبينج على الذهب (XAUUSD - M5).\n"
@@ -189,10 +179,7 @@ async def market_scanner_job(context: ContextTypes.DEFAULT_TYPE):
         )
         await context.bot.send_message(chat_id=chat_id, text=warning_text, parse_mode='Markdown')
     else:
-        # بعد الإشعار التحضيري: إرسال توصية الدخول المباشرة
         user_states["pending_warning"] = False
-        
-        # أزرار تأكيد دخول الصفقة
         buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ دخلت الصفقة", callback_data="entered_trade")],
             [InlineKeyboardButton("❌ لم أدخل الصفقة", callback_data="skipped_trade")]
@@ -210,7 +197,7 @@ async def market_scanner_job(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text=signal_text, reply_markup=buttons, parse_mode='Markdown')
 
 # ---------------------------------------------------------
-# 7. التفاعل مع أزرار التأكيد (هل دخلت الصفقة / هل خرجت؟)
+# 7. التفاعل مع الأزرار
 # ---------------------------------------------------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -218,11 +205,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "entered_trade":
         user_states["in_trade"] = True
-        
         close_button = InlineKeyboardMarkup([
             [InlineKeyboardButton("🏁 تم إغلاق الصفقة (أنا خرجت)", callback_data="exit_trade")]
         ])
-        
         await query.edit_message_text(
             "✅ **تم تسجيل دخولك في الصفقة بنجاح!**\n\n"
             "🔒 تم إيقاف إرسال أي صفقات جديدة للحفاظ على رأس مالك.\n"
@@ -237,7 +222,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "exit_trade":
         user_states["in_trade"] = False
-        await query.edit_message_text("🎉 **ألف مبروك! تم إغلاق الصفقة.**\n🟢 تم إعادة تفعيل الرادار التلقائي لمسح السوق واستخراج صفقات جديدة.")
+        await query.edit_message_text("🎉 **تم إغلاق الصفقة.**\n🟢 تم إعادة تفعيل الرادار التلقائي لمسح السوق واستخراج صفقات جديدة.")
 
 # ---------------------------------------------------------
 # 8. تشغيل البوت
@@ -247,13 +232,11 @@ def main():
 
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # معالجة الأوامر والرسائل
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(CallbackQueryHandler(button_callback))
 
-    # إضافة مهمة الفحص التكرارية كل 15 دقيقة (900 ثانية)
     job_queue = application.job_queue
     if job_queue:
         job_queue.run_repeating(market_scanner_job, interval=900, first=10)
