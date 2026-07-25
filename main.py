@@ -7,7 +7,7 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKe
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from flask import Flask
 from threading import Thread
-from google import genai
+import google.generativeai as genai
 from PIL import Image
 
 # إعداد السجلات (Logs)
@@ -38,8 +38,12 @@ BOT_TOKEN = "8672708333:AAFLEBR1AwNWHPMAa9SzXyOl8Gk9nsgMLjg"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 SYMBOL = "XAUUSD"
 
-# تهيئة عميل Gemini
-ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+# تهيئة موديل Gemini باستخدام google-generativeai المستقرة
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    ai_model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    ai_model = None
 
 # متغيرات حالة التداول للمستخدم
 user_states = {
@@ -123,10 +127,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر Gemini AI (استخدام gemini-1.5-flash المعتمد)
+# 5. تحليل الصور عبر Gemini AI
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not ai_client:
+    if not ai_model:
         await update.message.reply_text("❌ مفتاح GEMINI_API_KEY غير صحيح أو غير مضاف في Environment Variables على Render.")
         return
 
@@ -147,10 +151,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
-        response = ai_client.models.generate_content(
-            model='gemini-1.5-flash',
-            contents=[prompt, image]
-        )
+        response = ai_model.generate_content([prompt, image])
         
         await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي (Gemini):**\n\n{response.text}", parse_mode='Markdown')
 
@@ -197,7 +198,7 @@ async def market_scanner_job(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text=signal_text, reply_markup=buttons, parse_mode='Markdown')
 
 # ---------------------------------------------------------
-# 7. التفاعل مع الأزرار المدمجة (Inline Keyboards)
+# 7. التفاعل مع الأزرار
 # ---------------------------------------------------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
