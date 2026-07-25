@@ -10,7 +10,7 @@ from threading import Thread
 from google import genai
 from PIL import Image
 
-# إعداد السجلات
+# إعداد السجلات (Logs)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ---------------------------------------------------------
@@ -20,7 +20,7 @@ app_web = Flask('')
 
 @app_web.route('/')
 def home():
-    return "Gold Scalper Engine 24/7 is Active!"
+    return "Gold Scalper AI Engine 24/7 Active!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -32,16 +32,16 @@ def keep_alive():
     t.start()
 
 # ---------------------------------------------------------
-# 2. الثوابت وإعداد الذكاء الاصطناعي
+# 2. البيانات الثابتة وإعداد الذكاء الاصطناعي
 # ---------------------------------------------------------
 BOT_TOKEN = "8672708333:AAFLEBR1AwNWHPMAa9SzXyOl8Gk9nsgMLjg"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 SYMBOL = "XAUUSD"
 
-# تهيئة عميل Gemini حسب المكتبة الحديثة
+# تهيئة عميل Gemini
 ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-# متغيرات حالة التداول
+# متغيرات حالة التداول للمستخدم
 user_states = {
     "active_chat_id": None,
     "in_trade": False,
@@ -69,7 +69,7 @@ def is_market_open() -> tuple[bool, str]:
     return True, "السوق مفتوح ومتاح للتداول والسيولة جيدة."
 
 # ---------------------------------------------------------
-# 4. الأزرار والتفاعل
+# 4. الأزرار والتفاعل الأساسي
 # ---------------------------------------------------------
 main_keyboard = [
     ["🎯 يلا ندور على صفقة", "📊 كيف وضع السوق؟"],
@@ -84,7 +84,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_msg = (
         "أهلاً بك في نظام سكالبينج الذهب الأوتوماتيكي (XAUUSD) 🔱\n\n"
         "تم تفعيل الرادار التلقائي ليعمل في الكواليس كل 15 دقيقة.\n"
-        "سيصلك إشعار تحضيري قبل الصفحة بـ 5 دقائق، ثم إشعار دخول كامل عند اكتمال الشروط."
+        "سيصلك إشعار تحضيري قبل الصفقة بـ 5 دقائق، ثم إشعار دخول كامل عند اكتمال الشروط."
     )
     await update.message.reply_text(welcome_msg, reply_markup=markup)
 
@@ -123,7 +123,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر Gemini AI (المكتبة المحدثة)
+# 5. تحليل الصور عبر Gemini AI (استخدام gemini-1.5-flash المعتمد)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ai_client:
@@ -148,7 +148,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         response = ai_client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-1.5-flash',
             contents=[prompt, image]
         )
         
@@ -197,7 +197,7 @@ async def market_scanner_job(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text=signal_text, reply_markup=buttons, parse_mode='Markdown')
 
 # ---------------------------------------------------------
-# 7. التفاعل مع الأزرار
+# 7. التفاعل مع الأزرار المدمجة (Inline Keyboards)
 # ---------------------------------------------------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -225,7 +225,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🎉 **تم إغلاق الصفقة.**\n🟢 تم إعادة تفعيل الرادار التلقائي لمسح السوق واستخراج صفقات جديدة.")
 
 # ---------------------------------------------------------
-# 8. تشغيل البوت
+# 8. التشغيل الرئيسي
 # ---------------------------------------------------------
 def main():
     keep_alive()
