@@ -1,3 +1,5 @@
 python-telegram-bot
 pytz
 flask
+google-generativeai
+Pillow
