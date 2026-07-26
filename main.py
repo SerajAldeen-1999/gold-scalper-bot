@@ -111,7 +111,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status_icon = "🟢" if is_open else "🔴"
         ai_status = "🟢 متصل" if GEMINI_API_KEY else "🔴 غير مفعل"
         
-        # تصحيح منطق حالة التداول:
         if not is_open:
             trade_status = "🔴 متوقف (السوق مغلق)"
         elif user_states["in_trade"]:
@@ -130,7 +129,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر Gemini AI (استخدام gemini-1.5-flash لتجنب Quota Error)
+# 5. تحليل الصور عبر Gemini AI (اسم الموديل المعتمد gemini-2.0-flash)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ai_client:
@@ -154,9 +153,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
-        # تحويل الموديل إلى gemini-1.5-flash المتوافق مع الحسابات المجانية
         response = ai_client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.0-flash',
             contents=[prompt, image]
         )
         
