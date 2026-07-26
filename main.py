@@ -1,26 +1,28 @@
 import os
 import io
+import time
 import logging
-import base64
 import requests
 from datetime import datetime
 import pytz
+from threading import Thread
+from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-from flask import Flask
-from threading import Thread
+from google import genai
+from PIL import Image
 
 # إعداد السجلات (Logs)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ---------------------------------------------------------
-# 1. خادم Flask لإبقاء الخدمة حية 24/7 على Render
+# 1. خادم Flask وإبقاء الخدمة مستيقظة 24/7 (Self-Ping)
 # ---------------------------------------------------------
 app_web = Flask('')
 
 @app_web.route('/')
 def home():
-    return "Gold Scalper AI Engine 24/7 Active!"
+    return "Gold Scalper AI Engine 24/7 Active & Running!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -31,23 +33,46 @@ def keep_alive():
     t.daemon = True
     t.start()
 
+def self_ping():
+    """حماية سيرفر Render من الخمول عبر إرسال طلب ذاتي كل 10 دقائق"""
+    time.sleep(15)  # الانتظار حتى قيام السيرفر بالكامل
+    service_url = os.environ.get("RENDER_EXTERNAL_URL", "")
+    if service_url:
+        while True:
+            try:
+                requests.get(service_url, timeout=10)
+                logging.info("Self-ping sent successfully.")
+            except Exception as e:
+                logging.warning(f"Self-ping failed: {e}")
+            time.sleep(600)  # كل 10 دقائق
+
 # ---------------------------------------------------------
-# 2. البيانات الثابتة والمفاتيح الرسمية
+# 2. البيانات المتغيرات والأمان (Environment Variables)
 # ---------------------------------------------------------
-BOT_TOKEN = "8672708333:AAEoW7OnuAod0-pPRLUABMGHyj61yGR93NU"
+# قراءة التوكن بأمان من Render أو استخدام التوكن الافتراضي
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8672708333:AAEoW7OnuAod0-pPRLUABMGHyj61yGR93NU").strip()
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 SYMBOL = "XAUUSD"
 
-# قراءة المفتاح وتنظيفه تلقائياً من أي مسافات أو أسطر زائدة
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
+# تجهيز عميل Google Gemini الرسمى
+ai_client = None
+if GEMINI_API_KEY:
+    ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
-user_states = {
-    "active_chat_id": None,
-    "in_trade": False,
-    "pending_warning": False
-}
+# قاموس مستقر ليدعم عدة مستخدمين مستقلين (Multi-User Support)
+user_states = {}
+
+def get_user_state(chat_id: int) -> dict:
+    """استرجاع أو إنشاء حالة مستقلة لكل مستخدم"""
+    if chat_id not in user_states:
+        user_states[chat_id] = {
+            "in_trade": False,
+            "pending_warning": False
+        }
+    return user_states[chat_id]
 
 # ---------------------------------------------------------
-# 3. فحص أوقات السوق (نيويورك)
+# 3. فحص أوقات وإغلاقات السوق (توقيت نيويورك)
 # ---------------------------------------------------------
 def is_market_open() -> tuple[bool, str]:
     ny_tz = pytz.timezone("America/New_York")
@@ -71,212 +96,215 @@ def is_market_open() -> tuple[bool, str]:
 # ---------------------------------------------------------
 main_keyboard = [
     ["🎯 يلا ندور على صفقة", "📊 كيف وضع السوق؟"],
-    ["📈 تحليل صورة الشارت", "⚙️ حالة البوت والرمز"]
+    ["📈 تحليل صورة الشارت", "⚙️ حالة البوت والرمز"],
+    ["🔄 إعادة ضبط التداول"]
 ]
 markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    user_states["active_chat_id"] = chat_id
-    
+    get_user_state(chat_id)  # تسجيل حالة المستخدم
+
     welcome_msg = (
-        "أهلاً بك في نظام سكالبينج الذهب الأوتوماتيكي (XAUUSD) 🔱\n\n"
-        "تم تفعيل الرادار التلقائي ليعمل في الكواليس كل 15 دقيقة.\n"
-        "سيصلك إشعار تحضيري قبل الصفقة بـ 5 دقائق، ثم إشعار دخول كامل عند اكتمال الشروط."
+        "👑 **أهلاً بك في نظام سكالبينج الذهب الأوتوماتيكي (XAUUSD) Pro**\n\n"
+        "⚡ تم تفعيل الرادار التلقائي ليعمل في الكواليس على مدار 24/7.\n"
+        "🔔 سيصلك إشعار تحضيري قبل الصفقة بـ 5 دقائق، ثم إشعار دخول كامل عند اكتمال الشروط."
     )
-    await update.message.reply_text(welcome_msg, reply_markup=markup)
+    await update.message.reply_text(welcome_msg, reply_markup=markup, parse_mode="Markdown")
+
+async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """إعادة ضبط حالة التداول يدوياً"""
+    chat_id = update.effective_chat.id
+    state = get_user_state(chat_id)
+    state["in_trade"] = False
+    state["pending_warning"] = False
+    await update.message.reply_text("🔄 **تم إعادة ضبط التداول بنجاح!**\nالرادار يعمل الآن وجاهز لاستقبال أي فرصة جديدة.", reply_markup=markup, parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     chat_id = update.effective_chat.id
-    user_states["active_chat_id"] = chat_id
-    
+    state = get_user_state(chat_id)
+
     is_open, reason = is_market_open()
 
     if text in ["🎯 يلا ندور على صفقة", "📊 كيف وضع السوق؟"]:
         if not is_open:
             await update.message.reply_text(f"🔴 {reason}")
         else:
-            if user_states["in_trade"]:
-                await update.message.reply_text("⚠️ أنت حالياً داخل صفقة مفتوحة! لن يتم البحث عن صفقات جديدة حتى تخرج من الصفقة الحالية.")
+            if state["in_trade"]:
+                await update.message.reply_text("⚠️ **أنت حالياً داخل صفقة مفتوحة!**\nلن يتم البحث عن صفقات جديدة حتى تخرج من الصفقة الحالية وتضغط زر الخروج.")
             else:
-                await update.message.reply_text(f"🟢 {reason}\n🔎 الرادار يعمل في الكواليس، وسيتم تنبيهك فور اقتراب أي فرصة على فريم M1/M5.")
+                await update.message.reply_text(f"🟢 {reason}\n🔎 **الرادار يعمل في الكواليس**، وسيتم تنبيهك فور اقتراب أي فرصة على فريم M1/M5.")
 
     elif text == "📈 تحليل صورة الشارت":
-        await update.message.reply_text("📸 أرسل صورة الشارت (فريم M1 أو M5) وسيقوم محرك الذكاء الاصطناعي بتحليلها فوراً!")
+        await update.message.reply_text("📸 **أرسل صورة الشارت (فريم M1 أو M5)** وسيقوم محرك Gemini AI بتحليلها فوراً!")
 
     elif text == "⚙️ حالة البوت والرمز":
         status_icon = "🟢" if is_open else "🔴"
-        
+        ai_status = "🟢 متصل (Google Gemini Official API)" if GEMINI_API_KEY else "🔴 غير متصل (يرجى إضافة GEMINI_API_KEY)"
+
         if not is_open:
             trade_status = "🔴 متوقف (السوق مغلق)"
-        elif user_states["in_trade"]:
+        elif state["in_trade"]:
             trade_status = "🔴 داخل صفقة حالياً"
         else:
             trade_status = "🟢 جاهز لاستقبال صفقات"
-        
+
         msg = (
-            f"{status_icon} حالة السوق: {reason}\n"
-            f"📌 الرمز: {SYMBOL}\n"
-            f"🧠 الذكاء الاصطناعي: 🟢 متصل (OpenRouter Secure API)\n"
-            f"🔄 حالة التداول: {trade_status}"
+            f"{status_icon} **حالة السوق:** {reason}\n"
+            f"📌 **الرمز:** {SYMBOL}\n"
+            f"🧠 **الذكاء الاصطناعي:** {ai_status}\n"
+            f"🔄 **حالة التداول:** {trade_status}"
         )
-        await update.message.reply_text(msg)
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
+    elif text == "🔄 إعادة ضبط التداول":
+        await reset_command(update, context)
+
     else:
-        await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
+        await update.message.reply_text("يرجى استخدام الأزرار المتاحة في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر OpenRouter API (استخدام نموذج Gemini Vision المجاني)
+# 5. تحليل الصور المتقدم عبر Gemini (مع الماركداون)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📸 تم استلام الشارت! جاري معالجة الصورة وتحليل الشموع... ⏳")
+    if not ai_client:
+        await update.message.reply_text("⚠️ **مفتاح GEMINI_API_KEY غير مضاف في Render!**\nيرجى إضافته أولاً في متغيرات البيئة.")
+        return
+
+    await update.message.reply_text("📸 **تم استلام الشارت!** جاري تحليل الشموع واستخراج المستويات بدقة عبر محرك Gemini... ⏳")
 
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
-        
-        base64_image = base64.b64encode(photo_bytes).decode('utf-8')
+
+        image = Image.open(io.BytesIO(photo_bytes))
 
         prompt = (
             "أنت خبير تداول متقدم ومختص في إستراتيجيات السكالبينج لسوق الذهب (XAUUSD).\n"
-            "قم بتحليل صورة الشارت المرفقة بدقة عالية واستخرج النتائج التالية بلغة عربية واضحة ومباشرة:\n\n"
-            "1. الاتجاه الحالي (Trend): صاعد / هابط / عرضي.\n"
-            "2. مستويات الدعم والمقاومة القريبة المرئية على الشارت.\n"
-            "3. حركة المؤشرات القريبة المرئية (مثل RSI / MACD / المتوسطات / الشموع).\n"
-            "4. التوصية المقترحة: (شراء BUY / بيع SELL / الانتظار) مع ذكر السبب باختصار.\n"
-            "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
+            "قم بتحليل صورة الشارت المرفقة بدقة عالية واستخرج النتائج التالية منسقة باستخدام رؤوس أوراق وإيموجيات وضبط النص بالماركداون:\n\n"
+            "1. **الاتجاه الحالي (Trend):** (صاعد / هابط / عرضي)\n"
+            "2. **مستويات الدعم والمقاومة القريبة:**\n"
+            "3. **قراءة المؤشرات والشموع:**\n"
+            "4. **التوصية المقترحة:** (BUY / SELL / WAIT) مع توضيح السبب بدقة.\n"
+            "5. **نقاط الدخول والسكالبينج:** (نقطة الدخول، الهدف TP، وقف الخسارة SL)."
         )
 
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        # تم استخدام نموذج google/gemini-2.0-flash-exp:free الممتاز والمستقر في تحليل الصور
-        payload = {
-            "model": "google/gemini-2.0-flash-exp:free",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}"
-                            }
-                        }
-                    ]
-                }
-            ]
-        }
+        response = ai_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt, image]
+        )
 
-        response = requests.post(url, json=payload, headers=headers, timeout=60)
-
-        if response.status_code == 200:
-            result_data = response.json()
-            analysis_result = result_data['choices'][0]['message']['content']
+        if response and response.text:
+            full_response = f"📊 **نتائج تحليل الذكاء الاصطناعي (Gemini Vision):**\n\n{response.text}"
+            await update.message.reply_text(full_response, parse_mode="Markdown")
         else:
-            raise Exception(f"خطأ API ({response.status_code}): {response.text}")
-
-        if not analysis_result.strip():
-            raise Exception("لم يتم استلام رد من النموذج.")
-
-        full_response = f"📊 نتائج تحليل الذكاء الاصطناعي:\n\n{analysis_result}"
-        await update.message.reply_text(full_response)
+            raise Exception("لم يتم استلام رد صحيح من نموذج Gemini.")
 
     except Exception as e:
         logging.error(f"Error analyzing photo: {e}")
         error_message = (
-            "⚠️ حدث خطأ أثناء معالجة الصورة!\n\n"
-            f"🔍 تفاصيل الخطأ: {str(e)}"
+            "⚠️ **حدث خطأ أثناء معالجة الصورة!**\n\n"
+            f"🔍 التفاصيل: `{str(e)}`"
         )
-        await update.message.reply_text(error_message)
+        await update.message.reply_text(error_message, parse_mode="Markdown")
 
 # ---------------------------------------------------------
-# 6. المراقبة الآلية في الكواليس (كل 15 دقيقة)
+# 6. المراقبة الآلية والرادار (كل 15 دقيقة)
 # ---------------------------------------------------------
 async def market_scanner_job(context: ContextTypes.DEFAULT_TYPE):
-    chat_id = user_states["active_chat_id"]
-    if not chat_id:
+    is_open, _ = is_market_open()
+    if not is_open:
         return
 
-    is_open, reason = is_market_open()
-    
-    if not is_open or user_states["in_trade"]:
-        return
+    # المسح لجميع المستخدمين الذين تواصلوا مع البوت
+    for chat_id, state in user_states.items():
+        if state["in_trade"]:
+            continue
 
-    if not user_states["pending_warning"]:
-        user_states["pending_warning"] = True
-        warning_text = (
-            "⏳ تنبيه تحضيري (قبل الصفقة بـ 5 دقائق):\n\n"
-            "🔥 تم كشف سيولة متزايدة وتقارب في مؤشرات السكالبينج على الذهب (XAUUSD - M5).\n"
-            "🎯 جهز منصة التداول الخاصة بك، سيصلك إشعار الدخول المباشر فور اكتمال الشمعة!"
-        )
-        await context.bot.send_message(chat_id=chat_id, text=warning_text)
-    else:
-        user_states["pending_warning"] = False
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ دخلت الصفقة", callback_data="entered_trade")],
-            [InlineKeyboardButton("❌ لم أدخل الصفقة", callback_data="skipped_trade")]
-        ])
-        
-        signal_text = (
-            "🚀 إشعار دخول صفقة سكالبينج الآن!\n\n"
-            "📌 الرمز: XAUUSD (فريم M5)\n"
-            "🟢 النوع: شراء (BUY)\n"
-            "📍 نقطة الدخول المقترحة: السعر الحالي\n"
-            "🎯 هدف أرباح (TP): +25 نقطة\n"
-            "🛑 وقف خسارة (SL): -15 نقطة\n\n"
-            "هل قمت بالدخول في هذه الصفقة؟"
-        )
-        await context.bot.send_message(chat_id=chat_id, text=signal_text, reply_markup=buttons)
+        if not state["pending_warning"]:
+            state["pending_warning"] = True
+            warning_text = (
+                "⏳ **تنبيه تحضيري (قبل الصفقة بـ 5 دقائق):**\n\n"
+                "🔥 تم كشف سيولة متزايدة وتقارب في مؤشرات السكالبينج على الذهب (XAUUSD - M5).\n"
+                "🎯 جهز منصة التداول الخاصة بك، سيصلك إشعار الدخول المباشر فور اكتمال الشمعة!"
+            )
+            await context.bot.send_message(chat_id=chat_id, text=warning_text, parse_mode="Markdown")
+        else:
+            state["pending_warning"] = False
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ دخلت الصفقة", callback_data="entered_trade")],
+                [InlineKeyboardButton("❌ لم أدخل الصفقة", callback_data="skipped_trade")]
+            ])
+
+            signal_text = (
+                "🚀 **إشعار دخول صفقة سكالبينج الآن!**\n\n"
+                "📌 **الرمز:** XAUUSD (فريم M5)\n"
+                "🟢 **النوع:** شراء (BUY)\n"
+                "📍 **نقطة الدخول المقترحة:** السعر الحالي\n"
+                "🎯 **هدف الأرباح (TP):** +25 نقطة\n"
+                "🛑 **وقف الخسارة (SL):** -15 نقطة\n\n"
+                "هل قمت بالدخول في هذه الصفقة؟"
+            )
+            await context.bot.send_message(chat_id=chat_id, text=signal_text, reply_markup=buttons, parse_mode="Markdown")
 
 # ---------------------------------------------------------
-# 7. التفاعل مع الأزرار
+# 7. التفاعل مع أزرار الصفقة
 # ---------------------------------------------------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    chat_id = query.message.chat_id
+    state = get_user_state(chat_id)
     await query.answer()
 
     if query.data == "entered_trade":
-        user_states["in_trade"] = True
+        state["in_trade"] = True
         close_button = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🏁 تم إغلاق الصفقة (أنا خرجت)", callback_data="exit_trade")]
+            [InlineKeyboardButton("🏁 تم إغلاق الصفقة (خرجت الآن)", callback_data="exit_trade")]
         ])
         await query.edit_message_text(
-            "✅ تم تسجيل دخولك في الصفقة بنجاح!\n\n"
+            "✅ **تم تسجيل دخولك في الصفقة بنجاح!**\n\n"
             "🔒 تم إيقاف إرسال أي صفقات جديدة للحفاظ على رأس مالك.\n"
-            "عند تحقيق الهدف أو الخروج من الصفقة، اضغط على الزر أدناه لتفعيل الرادار مجدداً:",
-            reply_markup=close_button
+            "عند الخروج من الصفقة، اضغط على الزر أدناه لتفعيل الرادار مجدداً:",
+            reply_markup=close_button,
+            parse_mode="Markdown"
         )
 
     elif query.data == "skipped_trade":
-        user_states["in_trade"] = False
-        await query.edit_message_text("👍 تم إلغاء الصفقة. سيعود الرادار لمراقبة الفرص الجديدة تلقائياً.")
+        state["in_trade"] = False
+        await query.edit_message_text("👍 **تم تجاهل الصفقة.** سيعود الرادار لمراقبة الفرص الجديدة تلقائياً.")
 
     elif query.data == "exit_trade":
-        user_states["in_trade"] = False
-        await query.edit_message_text("🎉 تم إغلاق الصفقة.\n🟢 تم إعادة تفعيل الرادار التلقائي لمسح السوق واستخراج صفقات جديدة.")
+        state["in_trade"] = False
+        await query.edit_message_text("🎉 **تم إغلاق الصفقة بنجاح.**\n🟢 تم إعادة تفعيل الرادار التلقائي لمسح السوق.")
 
 # ---------------------------------------------------------
 # 8. التشغيل الرئيسي
 # ---------------------------------------------------------
 def main():
+    # 1. تشغيل خادم Flask
     keep_alive()
 
+    # 2. تشغيل الـ Self-Ping لمنع انقطاع السيرفر
+    t_ping = Thread(target=self_ping)
+    t_ping.daemon = True
+    t_ping.start()
+
+    # 3. إعداد وتطبيق التلغرام
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("reset", reset_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(CallbackQueryHandler(button_callback))
 
+    # 4. جدول الرادار كل 15 دقيقة
     job_queue = application.job_queue
     if job_queue:
         job_queue.run_repeating(market_scanner_job, interval=900, first=10)
 
+    # 5. بدء الاستماع
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
