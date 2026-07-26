@@ -37,8 +37,8 @@ def keep_alive():
 BOT_TOKEN = "8672708333:AAEoW7OnuAod0-pPRLUABMGHyj61yGR93NU"
 SYMBOL = "XAUUSD"
 
-# قراءة مفتاح OpenRouter من متغيرات البيئة في Render بأمان
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+# قراءة المفتاح وتنظيفه تلقائياً من أي مسافات أو أسطر زائدة
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
 
 user_states = {
     "active_chat_id": None,
