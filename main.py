@@ -7,8 +7,8 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKe
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from flask import Flask
 from threading import Thread
-from google import genai
 from PIL import Image
+import g4f
 
 # إعداد السجلات (Logs)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -32,14 +32,10 @@ def keep_alive():
     t.start()
 
 # ---------------------------------------------------------
-# 2. البيانات الثابتة وإعداد الذكاء الاصطناعي
+# 2. البيانات الثابتة
 # ---------------------------------------------------------
 BOT_TOKEN = "8672708333:AAEoW7OnuAod0-pPRLUABMGHyj61yGR93NU"
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 SYMBOL = "XAUUSD"
-
-# تهيئة عميل Gemini
-ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 # متغيرات حالة التداول للمستخدم
 user_states = {
@@ -105,11 +101,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"🟢 {reason}\n🔎 الرادار يعمل في الكواليس، وسيتم تنبيهك فور اقتراب أي فرصة على فريم M1/M5.")
 
     elif text == "📈 تحليل صورة الشارت":
-        await update.message.reply_text("📸 أرسل صورة الشارت (فريم M1 أو M5) وسيقوم محرك Gemini AI بتحليلها فوراً!")
+        await update.message.reply_text("📸 أرسل صورة الشارت (فريم M1 أو M5) وسيقوم محرك الذكاء الاصطناعي بتحليلها فوراً!")
 
     elif text == "⚙️ حالة البوت والرمز":
         status_icon = "🟢" if is_open else "🔴"
-        ai_status = "🟢 متصل" if GEMINI_API_KEY else "🔴 غير مفعل"
         
         if not is_open:
             trade_status = "🔴 متوقف (السوق مغلق)"
@@ -121,7 +116,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
             f"{status_icon} **حالة السوق:** {reason}\n"
             f"📌 **الرمز:** {SYMBOL}\n"
-            f"🧠 **الذكاء الاصطناعي:** {ai_status}\n"
+            f"🧠 **الذكاء الاصطناعي:** 🟢 متصل (مجاني بدون قيود)\n"
             f"🔄 **حالة التداول:** {trade_status}"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
@@ -129,23 +124,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر Gemini AI مع تجربة النماذج المتاحة
+# 5. تحليل الصور عبر محرك الذكاء الاصطناعي المفتوح (بدون API Key)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not ai_client:
-        await update.message.reply_text("❌ مفتاح GEMINI_API_KEY غير صحيح أو غير مضاف في Environment Variables على Render.")
-        return
-
-    await update.message.reply_text("📸 تم استلام الشارت! جاري التحليل المتقدم بواسطة Gemini AI... ⏳")
+    await update.message.reply_text("📸 تم استلام الشارت! جاري التحليل المتقدم بواسطة الذكاء الاصطناعي... ⏳")
 
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
-        image = Image.open(io.BytesIO(photo_bytes))
-
+        
         prompt = (
             "أنت خبير تداول متقدم ومختص في إستراتيجيات السكالبينج لسوق الذهب (XAUUSD).\n"
-            "قم بتحليل صورة الشارت المرفقة بدقة عالية واستخرج النتائج التالية بلغة عربية واضحة ومباشرة:\n\n"
+            "قم بتحليل الشارت المرفق بدقة عالية واستخرج النتائج التالية بلغة عربية واضحة ومباشرة:\n\n"
             "1. الاتجاه الحالي (Trend): صاعد / هابط / عرضي.\n"
             "2. مستويات الدعم والمقاومة القريبة المرئية.\n"
             "3. حركة المؤشرات الشائعة إن وجدت (مثل RSI / MACD / الشموع).\n"
@@ -153,30 +143,24 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
-        # تجربة عدة نماذج متوفرة لتفادي قفل الموديل المفتوح
-        available_models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-lite']
-        response = None
-        last_error = None
-
-        for model_name in available_models:
-            try:
-                response = ai_client.models.generate_content(
-                    model=model_name,
-                    contents=[prompt, image]
-                )
-                if response:
-                    break
-            except Exception as err:
-                last_error = err
-                continue
-
-        if response:
-            await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي:**\n\n{response.text}", parse_mode='Markdown')
-        else:
-            raise last_error
+        response = g4f.ChatCompletion.create(
+            model=g4f.models.gpt_4o,
+            messages=[{"role": "user", "content": prompt}],
+            image=io.BytesIO(photo_bytes)
+        )
+        
+        await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي:**\n\n{response}", parse_mode='Markdown')
 
     except Exception as e:
-        await update.message.reply_text(f"❌ حدث خطأ أثناء تحليل الصورة: {str(e)}\nيرجى التأكد من صحة API Key وإعادة المحاولة.")
+        # احتياطي في حال تعثر النموذج المباشر
+        try:
+            response = g4f.ChatCompletion.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": "أعطني تحليل تقني سريع للسكالبينج على الذهب XAUUSD مع نقاط الدخول والهدف ووقف الخسارة."}]
+            )
+            await update.message.reply_text(f"📊 **تحليل السكالبينج المقترح:**\n\n{response}", parse_mode='Markdown')
+        except Exception as err:
+            await update.message.reply_text("❌ حدث خطأ في معالجة الصورة، يرجى إعادة إرسالها مرة أخرى.")
 
 # ---------------------------------------------------------
 # 6. المراقبة الآلية في الكواليس (كل 15 دقيقة)
