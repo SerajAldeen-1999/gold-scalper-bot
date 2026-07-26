@@ -113,20 +113,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             trade_status = "🟢 جاهز لاستقبال صفقات"
         
         msg = (
-            f"{status_icon} **حالة السوق:** {reason}\n"
-            f"📌 **الرمز:** {SYMBOL}\n"
-            f"🧠 **الذكاء الاصطناعي:** 🟢 متصل (محرك رؤية مجاني ومفتوح)\n"
-            f"🔄 **حالة التداول:** {trade_status}"
+            f"{status_icon} حالة السوق: {reason}\n"
+            f"📌 الرمز: {SYMBOL}\n"
+            f"🧠 الذكاء الاصطناعي: 🟢 متصل (محرك رؤية مجاني وبدون قيود)\n"
+            f"🔄 حالة التداول: {trade_status}"
         )
-        await update.message.reply_text(msg, parse_mode='Markdown')
+        await update.message.reply_text(msg)
     else:
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر محرك مجاني ومستقر (Qwen/LLaVA Vision)
+# 5. تحليل الصور السريع والنظيف (بدون خطأ Markdown)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📸 تم استلام الشارت! جاري معالجة الصورة وتحليل الشموع بواسطة الذكاء الاصطناعي... ⏳")
+    await update.message.reply_text("📸 تم استلام الشارت! جاري معالجة الصورة وتحليل الشموع... ⏳")
 
     try:
         photo_file = await update.message.photo[-1].get_file()
@@ -142,62 +142,41 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
-        # رفع مؤقت وآمن للصورة عبر Catbox (سريع جداً ومفتوح)
+        # رفع الصورة كملف مؤقت سريع
         upload_res = requests.post(
             "https://catbox.moe/user/api.php",
             data={"reqtype": "fileupload"},
             files={"fileToUpload": ("chart.jpg", io.BytesIO(photo_bytes), "image/jpeg")},
-            timeout=30
+            timeout=25
         )
         
         if upload_res.status_code != 200:
-            raise Exception("فشل رفع الصورة على خادم المعالجة المؤقت.")
+            raise Exception("فشل رفع الصورة على خادم المعالجة.")
 
         image_url = upload_res.text.strip()
 
-        # إرسال الصورة والرابط إلى API محرك رؤية مفتوح
-        ai_payload = {
-            "model": "qwen",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": f"{prompt}\n\nرابط صورة الشارت: {image_url}"
-                }
-            ]
-        }
-
-        # استخدام API المباشر للمحرك المفتوح
-        response = requests.post(
-            "https://text.pollinations.ai/",
-            json={
-                "messages": [{"role": "user", "content": f"{prompt}\nImage URL: {image_url}"}],
-                "model": "searchgpt",
-                "code": "beartoken"
-            },
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=60
+        # طلب التحليل المباشر والسريع
+        response = requests.get(
+            f"https://text.pollinations.ai/{prompt}%20Image:{image_url}?model=qwen", 
+            timeout=45
         )
 
-        # تجربة المحرك البديل السريع إذا كان الخادم الرئيسي يعطي 402
-        if response.status_code != 200:
-            res_alt = requests.get(f"https://text.pollinations.ai/{prompt}%20Image:{image_url}?model=qwen", timeout=60)
-            analysis_result = res_alt.text
-        else:
-            analysis_result = response.text
+        analysis_result = response.text
 
         if not analysis_result.strip():
             raise Exception("لم يتم استلام نص التحليل من خادم الذكاء الاصطناعي.")
 
-        await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي:**\n\n{analysis_result}", parse_mode='Markdown')
+        # إرسال النص بدون parse_mode لمنع أخطاء التنسيق
+        full_response = f"📊 نتائج تحليل الذكاء الاصطناعي:\n\n{analysis_result}"
+        await update.message.reply_text(full_response)
 
     except Exception as e:
         logging.error(f"Error analyzing photo: {e}")
         error_message = (
-            "⚠️ **حدث خطأ أثناء معالجة الصورة!**\n\n"
-            "🔍 **تفاصيل الخطأ (Debug Error):**\n"
-            f"`{str(e)}`"
+            "⚠️ حدث خطأ أثناء معالجة الصورة!\n\n"
+            f"🔍 تفاصيل الخطأ: {str(e)}"
         )
-        await update.message.reply_text(error_message, parse_mode='Markdown')
+        await update.message.reply_text(error_message)
 
 # ---------------------------------------------------------
 # 6. المراقبة الآلية في الكواليس (كل 15 دقيقة)
@@ -215,11 +194,11 @@ async def market_scanner_job(context: ContextTypes.DEFAULT_TYPE):
     if not user_states["pending_warning"]:
         user_states["pending_warning"] = True
         warning_text = (
-            "⏳ **تنبيه تحضيري (قبل الصفقة بـ 5 دقائق):**\n\n"
+            "⏳ تنبيه تحضيري (قبل الصفقة بـ 5 دقائق):\n\n"
             "🔥 تم كشف سيولة متزايدة وتقارب في مؤشرات السكالبينج على الذهب (XAUUSD - M5).\n"
             "🎯 جهز منصة التداول الخاصة بك، سيصلك إشعار الدخول المباشر فور اكتمال الشمعة!"
         )
-        await context.bot.send_message(chat_id=chat_id, text=warning_text, parse_mode='Markdown')
+        await context.bot.send_message(chat_id=chat_id, text=warning_text)
     else:
         user_states["pending_warning"] = False
         buttons = InlineKeyboardMarkup([
@@ -228,15 +207,15 @@ async def market_scanner_job(context: ContextTypes.DEFAULT_TYPE):
         ])
         
         signal_text = (
-            "🚀 **إشعار دخول صفقة سكالبينج الآن!**\n\n"
-            "📌 **الرمز:** XAUUSD (فريم M5)\n"
-            "🟢 **النوع:** شراء (BUY)\n"
-            "📍 **نقطة الدخول المقترحة:** السعر الحالي\n"
-            "🎯 **هدف أرباح (TP):** +25 نقطة\n"
-            "🛑 **وقف خسارة (SL):** -15 نقطة\n\n"
+            "🚀 إشعار دخول صفقة سكالبينج الآن!\n\n"
+            "📌 الرمز: XAUUSD (فريم M5)\n"
+            "🟢 النوع: شراء (BUY)\n"
+            "📍 نقطة الدخول المقترحة: السعر الحالي\n"
+            "🎯 هدف أرباح (TP): +25 نقطة\n"
+            "🛑 وقف خسارة (SL): -15 نقطة\n\n"
             "هل قمت بالدخول في هذه الصفقة؟"
         )
-        await context.bot.send_message(chat_id=chat_id, text=signal_text, reply_markup=buttons, parse_mode='Markdown')
+        await context.bot.send_message(chat_id=chat_id, text=signal_text, reply_markup=buttons)
 
 # ---------------------------------------------------------
 # 7. التفاعل مع الأزرار
@@ -251,11 +230,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🏁 تم إغلاق الصفقة (أنا خرجت)", callback_data="exit_trade")]
         ])
         await query.edit_message_text(
-            "✅ **تم تسجيل دخولك في الصفقة بنجاح!**\n\n"
+            "✅ تم تسجيل دخولك في الصفقة بنجاح!\n\n"
             "🔒 تم إيقاف إرسال أي صفقات جديدة للحفاظ على رأس مالك.\n"
             "عند تحقيق الهدف أو الخروج من الصفقة، اضغط على الزر أدناه لتفعيل الرادار مجدداً:",
-            reply_markup=close_button,
-            parse_mode='Markdown'
+            reply_markup=close_button
         )
 
     elif query.data == "skipped_trade":
@@ -264,7 +242,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "exit_trade":
         user_states["in_trade"] = False
-        await query.edit_message_text("🎉 **تم إغلاق الصفقة.**\n🟢 تم إعادة تفعيل الرادار التلقائي لمسح السوق واستخراج صفقات جديدة.")
+        await query.edit_message_text("🎉 تم إغلاق الصفقة.\n🟢 تم إعادة تفعيل الرادار التلقائي لمسح السوق واستخراج صفقات جديدة.")
 
 # ---------------------------------------------------------
 # 8. التشغيل الرئيسي
