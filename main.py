@@ -2,20 +2,23 @@ import os
 import io
 import time
 import logging
+import asyncio
 import requests
 from datetime import datetime
 import pytz
 from threading import Thread
 from flask import Flask
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from PIL import Image
 
+# ---------------------------------------------------------
 # إعداد السجلات (Logs)
+# ---------------------------------------------------------
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ---------------------------------------------------------
-# 1. خادم Flask وإبقاء الخدمة مستيقظة
+# 1. خادم Flask وإبقاء الخدمة مستيقظة (Render Health Check)
 # ---------------------------------------------------------
 app_web = Flask('')
 
@@ -24,7 +27,7 @@ def home():
     return "Gold Scalper AI Engine 24/7 Active & Running!", 200
 
 def run_web():
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", 10000))
     app_web.run(host='0.0.0.0', port=port)
 
 def keep_alive():
@@ -44,9 +47,9 @@ def self_ping():
         time.sleep(600)
 
 # ---------------------------------------------------------
-# 2. البيانات الثابتة
+# 2. الإعدادات والتوكن
 # ---------------------------------------------------------
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8672708333:AAEoW7OnuAod0-pPRLUABMGHyj61yGR93NU").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8672708333:AAHiWvvPzjx92vll3MZJhpRtbGNRauxLTSA").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 SYMBOL = "XAUUSD"
 
@@ -55,6 +58,7 @@ if GEMINI_API_KEY:
     try:
         from google import genai
         ai_client = genai.Client(api_key=GEMINI_API_KEY)
+        logging.info("Gemini AI Client Ready.")
     except Exception as e:
         logging.error(f"Gemini Init Error: {e}")
 
@@ -66,7 +70,7 @@ def get_user_state(chat_id: int) -> dict:
     return user_states[chat_id]
 
 # ---------------------------------------------------------
-# 3. فحص أوقات السوق
+# 3. فحص أوقات سوق الذهب (XAUUSD)
 # ---------------------------------------------------------
 def is_market_open() -> tuple[bool, str]:
     ny_tz = pytz.timezone("America/New_York")
@@ -86,7 +90,7 @@ def is_market_open() -> tuple[bool, str]:
     return True, "السوق مفتوح ومتاح للتداول."
 
 # ---------------------------------------------------------
-# 4. التفاعل والأوامر
+# 4. أوامر البوت واللوحة
 # ---------------------------------------------------------
 main_keyboard = [
     ["🎯 يلا ندور على صفقة", "📊 كيف وضع السوق؟"],
@@ -152,7 +156,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ **خطأ:** `{str(e)}`", parse_mode="Markdown")
 
 # ---------------------------------------------------------
-# 5. التشغيل
+# 5. التشغيل الرئيسي
 # ---------------------------------------------------------
 def main():
     keep_alive()
@@ -160,15 +164,16 @@ def main():
     t_ping.daemon = True
     t_ping.start()
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    builder = Application.builder().token(BOT_TOKEN)
+    application = builder.build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("reset", reset_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("🚀 البوت شغال...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    print("🚀 البوت شغال بنجاح...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == '__main__':
     main()
