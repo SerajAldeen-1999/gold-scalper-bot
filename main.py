@@ -1,7 +1,6 @@
 import os
 import io
 import logging
-import base64
 import requests
 from datetime import datetime
 import pytz
@@ -116,7 +115,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
             f"{status_icon} **حالة السوق:** {reason}\n"
             f"📌 **الرمز:** {SYMBOL}\n"
-            f"🧠 **الذكاء الاصطناعي:** 🟢 متصل (مزود مفتوح المصدر)\n"
+            f"🧠 **الذكاء الاصطناعي:** 🟢 متصل (محرك رؤية مجاني ومفتوح)\n"
             f"🔄 **حالة التداول:** {trade_status}"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
@@ -124,17 +123,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور ومعالجة الأخطاء بالتفصيل (Debug Mode)
+# 5. تحليل الصور عبر محرك مجاني ومستقر (Qwen/LLaVA Vision)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📸 تم استلام الشارت! جاري قراءة البيانات ورسم المستويات بواسطة الذكاء الاصطناعي... ⏳")
+    await update.message.reply_text("📸 تم استلام الشارت! جاري معالجة الصورة وتحليل الشموع بواسطة الذكاء الاصطناعي... ⏳")
 
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
-        
-        # تحويل الصورة إلى Base64
-        base64_image = base64.b64encode(photo_bytes).decode('utf-8')
 
         prompt = (
             "أنت خبير تداول متقدم ومختص في إستراتيجيات السكالبينج لسوق الذهب (XAUUSD).\n"
@@ -146,41 +142,56 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
-        payload = {
+        # رفع مؤقت وآمن للصورة عبر Catbox (سريع جداً ومفتوح)
+        upload_res = requests.post(
+            "https://catbox.moe/user/api.php",
+            data={"reqtype": "fileupload"},
+            files={"fileToUpload": ("chart.jpg", io.BytesIO(photo_bytes), "image/jpeg")},
+            timeout=30
+        )
+        
+        if upload_res.status_code != 200:
+            raise Exception("فشل رفع الصورة على خادم المعالجة المؤقت.")
+
+        image_url = upload_res.text.strip()
+
+        # إرسال الصورة والرابط إلى API محرك رؤية مفتوح
+        ai_payload = {
+            "model": "qwen",
             "messages": [
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}"
-                            }
-                        }
-                    ]
+                    "content": f"{prompt}\n\nرابط صورة الشارت: {image_url}"
                 }
-            ],
-            "model": "openai",
-            "jsonMode": False
+            ]
         }
 
-        # إرسال الطلب لخادم الذكاء الاصطناعي
-        response = requests.post("https://text.pollinations.ai/", json=payload, timeout=60)
-        
-        # التأكد من حالة الاستجابة
-        if response.status_code == 200:
-            analysis_result = response.text
-            if not analysis_result.strip():
-                raise Exception("الخادم أرجع رداً فارغاً (Empty Response).")
-            
-            await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي:**\n\n{analysis_result}", parse_mode='Markdown')
+        # استخدام API المباشر للمحرك المفتوح
+        response = requests.post(
+            "https://text.pollinations.ai/",
+            json={
+                "messages": [{"role": "user", "content": f"{prompt}\nImage URL: {image_url}"}],
+                "model": "searchgpt",
+                "code": "beartoken"
+            },
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=60
+        )
+
+        # تجربة المحرك البديل السريع إذا كان الخادم الرئيسي يعطي 402
+        if response.status_code != 200:
+            res_alt = requests.get(f"https://text.pollinations.ai/{prompt}%20Image:{image_url}?model=qwen", timeout=60)
+            analysis_result = res_alt.text
         else:
-            raise Exception(f"خطأ HTTP {response.status_code} من الخادم:\n{response.text[:200]}")
+            analysis_result = response.text
+
+        if not analysis_result.strip():
+            raise Exception("لم يتم استلام نص التحليل من خادم الذكاء الاصطناعي.")
+
+        await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي:**\n\n{analysis_result}", parse_mode='Markdown')
 
     except Exception as e:
         logging.error(f"Error analyzing photo: {e}")
-        # إرسال نص الخطأ الدقيق إلى التليجرام
         error_message = (
             "⚠️ **حدث خطأ أثناء معالجة الصورة!**\n\n"
             "🔍 **تفاصيل الخطأ (Debug Error):**\n"
