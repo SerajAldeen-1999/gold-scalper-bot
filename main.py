@@ -1,6 +1,7 @@
 import os
 import io
 import logging
+import base64
 import requests
 from datetime import datetime
 import pytz
@@ -9,7 +10,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 from flask import Flask
 from threading import Thread
 from PIL import Image
-import g4f
 
 # إعداد السجلات (Logs)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -116,7 +116,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
             f"{status_icon} **حالة السوق:** {reason}\n"
             f"📌 **الرمز:** {SYMBOL}\n"
-            f"🧠 **الذكاء الاصطناعي:** 🟢 متصل (مجاني بدون قيود)\n"
+            f"🧠 **الذكاء الاصطناعي:** 🟢 متصل (خدمة مفتوحة بدون قيود)\n"
             f"🔄 **حالة التداول:** {trade_status}"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
@@ -124,26 +124,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر رفع الصورة ورؤية الشارت مباشرة
+# 5. تحليل الصور باستخدام المحرك المفتوح (Pollinations AI / OpenAI Format)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📸 تم استلام الشارت! جاري رفع الصورة وفحص المستويات بواسطة الذكاء الاصطناعي... ⏳")
+    await update.message.reply_text("📸 تم استلام الشارت! جاري قراءة البيانات ورسم المستويات بواسطة الذكاء الاصطناعي... ⏳")
 
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
         
-        # رفع الصورة مؤقتاً للحصول على رابط مباشر
-        upload_resp = requests.post(
-            "https://file.io",
-            files={"file": ("chart.jpg", io.BytesIO(photo_bytes), "image/jpeg")}
-        )
-        img_url = upload_resp.json().get("link", "")
+        # تحويل الصورة إلى Base64
+        base64_image = base64.b64encode(photo_bytes).decode('utf-8')
 
         prompt = (
-            f"أنت خبير تداول متقدم ومختص في إستراتيجيات السكالبينج لسوق الذهب (XAUUSD).\n"
-            f"أنظر إلى صورة الشارت الموجودة في هذا الرابط المباشر: {img_url}\n\n"
-            "قم بتحليل الشارت المرفق بدقة عالية واستخرج النتائج التالية بلغة عربية واضحة ومباشرة:\n"
+            "أنت خبير تداول متقدم ومختص في إستراتيجيات السكالبينج لسوق الذهب (XAUUSD).\n"
+            "قم بتحليل صورة الشارت المرفقة بدقة عالية واستخرج النتائج التالية بلغة عربية واضحة ومباشرة:\n\n"
             "1. الاتجاه الحالي (Trend): صاعد / هابط / عرضي.\n"
             "2. مستويات الدعم والمقاومة القريبة المرئية على الشارت.\n"
             "3. حركة المؤشرات القريبة المرئية (مثل RSI / MACD / المتوسطات / الشموع).\n"
@@ -151,15 +146,37 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
-        response = g4f.ChatCompletion.create(
-            model=g4f.models.gpt_4o,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        payload = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "model": "openai",  # يتم تحويلها تلقائياً لأفضل نموذج رؤية مفتوح مثل GPT-4o / Qwen
+            "jsonMode": False
+        }
+
+        # إرسال الطلب لخادم Pollinations AI المفتوح والمجاني بالكامل
+        response = requests.post("https://text.pollinations.ai/", json=payload, timeout=60)
         
-        await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي:**\n\n{response}", parse_mode='Markdown')
+        if response.status_code == 200:
+            analysis_result = response.text
+            await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي:**\n\n{analysis_result}", parse_mode='Markdown')
+        else:
+            raise Exception("فشل الاتصال بمزود الذكاء الاصطناعي المجاني")
 
     except Exception as e:
-        await update.message.reply_text("❌ حدث خطأ بسيط أثناء معالجة الصورة، يرجى إعادة إرسالها مجدداً.")
+        logging.error(f"Error analyzing photo: {e}")
+        await update.message.reply_text("❌ حدث خطأ مؤقت أثناء تحليل الصورة، يرجى إعادة إرسالها بعد ثوانٍ قليلة.")
 
 # ---------------------------------------------------------
 # 6. المراقبة الآلية في الكواليس (كل 15 دقيقة)
