@@ -126,7 +126,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر OpenRouter API
+# 5. تحليل الصور عبر OpenRouter API (استخدام نموذج Gemini Vision المجاني)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📸 تم استلام الشارت! جاري معالجة الصورة وتحليل الشموع... ⏳")
@@ -153,8 +153,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Content-Type": "application/json"
         }
         
+        # تم استخدام نموذج google/gemini-2.0-flash-exp:free الممتاز والمستقر في تحليل الصور
         payload = {
-            "model": "qwen/qwen-2-vl-7b-instruct:free",
+            "model": "google/gemini-2.0-flash-exp:free",
             "messages": [
                 {
                     "role": "user",
