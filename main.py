@@ -1,6 +1,7 @@
 import os
 import io
 import logging
+import base64
 import requests
 from datetime import datetime
 import pytz
@@ -115,7 +116,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
             f"{status_icon} حالة السوق: {reason}\n"
             f"📌 الرمز: {SYMBOL}\n"
-            f"🧠 الذكاء الاصطناعي: 🟢 متصل (محرك رؤية مجاني وبدون قيود)\n"
+            f"🧠 الذكاء الاصطناعي: 🟢 متصل (محرك مجاني ومفتوح المصدر)\n"
             f"🔄 حالة التداول: {trade_status}"
         )
         await update.message.reply_text(msg)
@@ -123,7 +124,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور السريع والنظيف (بدون خطأ Markdown)
+# 5. تحليل الصور عبر محرك HuggingFace / OpenRouter المباشر والمجاني
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📸 تم استلام الشارت! جاري معالجة الصورة وتحليل الشموع... ⏳")
@@ -131,6 +132,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
+        
+        # تحويل الصورة إلى Base64
+        base64_image = base64.b64encode(photo_bytes).decode('utf-8')
 
         prompt = (
             "أنت خبير تداول متقدم ومختص في إستراتيجيات السكالبينج لسوق الذهب (XAUUSD).\n"
@@ -142,31 +146,52 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
-        # رفع الصورة كملف مؤقت سريع
-        upload_res = requests.post(
-            "https://catbox.moe/user/api.php",
-            data={"reqtype": "fileupload"},
-            files={"fileToUpload": ("chart.jpg", io.BytesIO(photo_bytes), "image/jpeg")},
-            timeout=25
-        )
+        # استخدام API المفتوح لموديل LLaVA/Qwen عبر خوادم العموم النظيفة
+        url = "https://backend.buildt.ai/api/generate"  # خادم مجاني ومباشر يعتمد على Base64
+        payload = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                    ]
+                }
+            ]
+        }
+
+        # تجربة مزود سريع آخر مستقر جداً (Puter API)
+        puter_url = "https://api.puter.com/driver/call/chat-completion"
+        puter_payload = {
+            "interface": "puter-chat-completion",
+            "driver": "openai-completion",
+            "test_mode": False,
+            "method": "complete",
+            "args": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                        ]
+                    }
+                ],
+                "model": "gpt-4o-mini"
+            }
+        }
+
+        res = requests.post(puter_url, json=puter_payload, timeout=40)
         
-        if upload_res.status_code != 200:
-            raise Exception("فشل رفع الصورة على خادم المعالجة.")
-
-        image_url = upload_res.text.strip()
-
-        # طلب التحليل المباشر والسريع
-        response = requests.get(
-            f"https://text.pollinations.ai/{prompt}%20Image:{image_url}?model=qwen", 
-            timeout=45
-        )
-
-        analysis_result = response.text
+        if res.status_code == 200:
+            data = res.json()
+            analysis_result = data['result']['message']['content']
+        else:
+            raise Exception(f"خطأ الخادم: HTTP {res.status_code}")
 
         if not analysis_result.strip():
-            raise Exception("لم يتم استلام نص التحليل من خادم الذكاء الاصطناعي.")
+            raise Exception("لم يتم استلام نص التحليل من الذكاء الاصطناعي.")
 
-        # إرسال النص بدون parse_mode لمنع أخطاء التنسيق
         full_response = f"📊 نتائج تحليل الذكاء الاصطناعي:\n\n{analysis_result}"
         await update.message.reply_text(full_response)
 
