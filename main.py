@@ -129,7 +129,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر Gemini AI (اسم الموديل المعتمد gemini-2.0-flash)
+# 5. تحليل الصور عبر Gemini AI مع تجربة النماذج المتاحة
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ai_client:
@@ -153,12 +153,27 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
-        response = ai_client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[prompt, image]
-        )
-        
-        await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي (Gemini):**\n\n{response.text}", parse_mode='Markdown')
+        # تجربة عدة نماذج متوفرة لتفادي قفل الموديل المفتوح
+        available_models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-lite']
+        response = None
+        last_error = None
+
+        for model_name in available_models:
+            try:
+                response = ai_client.models.generate_content(
+                    model=model_name,
+                    contents=[prompt, image]
+                )
+                if response:
+                    break
+            except Exception as err:
+                last_error = err
+                continue
+
+        if response:
+            await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي:**\n\n{response.text}", parse_mode='Markdown')
+        else:
+            raise last_error
 
     except Exception as e:
         await update.message.reply_text(f"❌ حدث خطأ أثناء تحليل الصورة: {str(e)}\nيرجى التأكد من صحة API Key وإعادة المحاولة.")
