@@ -1,7 +1,7 @@
 import os
 import io
 import logging
-import base64
+import requests
 from datetime import datetime
 import pytz
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
@@ -38,7 +38,6 @@ def keep_alive():
 BOT_TOKEN = "8672708333:AAEoW7OnuAod0-pPRLUABMGHyj61yGR93NU"
 SYMBOL = "XAUUSD"
 
-# متغيرات حالة التداول للمستخدم
 user_states = {
     "active_chat_id": None,
     "in_trade": False,
@@ -125,20 +124,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر الذكاء الاصطناعي (تمرير الصورة بـ Base64)
+# 5. تحليل الصور عبر رفع الصورة ورؤية الشارت مباشرة
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📸 تم استلام الشارت! جاري قراءة البيانات ورسم المستويات بواسطة الذكاء الاصطناعي... ⏳")
+    await update.message.reply_text("📸 تم استلام الشارت! جاري رفع الصورة وفحص المستويات بواسطة الذكاء الاصطناعي... ⏳")
 
     try:
-        # تحميل الصورة وتحويلها إلى Base64
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
-        base64_image = base64.b64encode(photo_bytes).decode('utf-8')
+        
+        # رفع الصورة مؤقتاً للحصول على رابط مباشر
+        upload_resp = requests.post(
+            "https://file.io",
+            files={"file": ("chart.jpg", io.BytesIO(photo_bytes), "image/jpeg")}
+        )
+        img_url = upload_resp.json().get("link", "")
 
         prompt = (
-            "أنت خبير تداول متقدم ومختص في إستراتيجيات السكالبينج لسوق الذهب (XAUUSD).\n"
-            "قم بتحليل صورة الشارت المرفقة بدقة عالية واستخرج النتائج التالية بلغة عربية واضحة ومباشرة:\n\n"
+            f"أنت خبير تداول متقدم ومختص في إستراتيجيات السكالبينج لسوق الذهب (XAUUSD).\n"
+            f"أنظر إلى صورة الشارت الموجودة في هذا الرابط المباشر: {img_url}\n\n"
+            "قم بتحليل الشارت المرفق بدقة عالية واستخرج النتائج التالية بلغة عربية واضحة ومباشرة:\n"
             "1. الاتجاه الحالي (Trend): صاعد / هابط / عرضي.\n"
             "2. مستويات الدعم والمقاومة القريبة المرئية على الشارت.\n"
             "3. حركة المؤشرات القريبة المرئية (مثل RSI / MACD / المتوسطات / الشموع).\n"
@@ -146,29 +151,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
-        # إرسال النص والصورة بصيغة Data URI
         response = g4f.ChatCompletion.create(
             model=g4f.models.gpt_4o,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                ]
-            }]
+            messages=[{"role": "user", "content": prompt}]
         )
         
         await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي:**\n\n{response}", parse_mode='Markdown')
 
     except Exception as e:
-        try:
-            response = g4f.ChatCompletion.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": "أعطني تحليل تقني سريع للسكالبينج على الذهب XAUUSD مع التوصية ونقاط الدخول والهدف والستوب."}]
-            )
-            await update.message.reply_text(f"📊 **تحليل السكالبينج التقديري:**\n\n{response}", parse_mode='Markdown')
-        except Exception as err:
-            await update.message.reply_text("❌ حدث خطأ أثناء معالجة الصورة، يرجى إعادة إرسالها مجدداً.")
+        await update.message.reply_text("❌ حدث خطأ بسيط أثناء معالجة الصورة، يرجى إعادة إرسالها مجدداً.")
 
 # ---------------------------------------------------------
 # 6. المراقبة الآلية في الكواليس (كل 15 دقيقة)
