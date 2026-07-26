@@ -3,4 +3,3 @@ flask
 pillow
 pytz
 requests
-g4f
