@@ -1,5 +1,6 @@
 python-telegram-bot
 flask
-google-genai
 pillow
 pytz
+requests
+g4f
