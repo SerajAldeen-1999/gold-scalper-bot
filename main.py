@@ -9,20 +9,19 @@ from threading import Thread
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-from google import genai
 from PIL import Image
 
 # إعداد السجلات (Logs)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ---------------------------------------------------------
-# 1. خادم Flask وإبقاء الخدمة مستيقظة 24/7 (Self-Ping)
+# 1. خادم Flask وإبقاء الخدمة مستيقظة 24/7 (Render Health Check)
 # ---------------------------------------------------------
 app_web = Flask('')
 
 @app_web.route('/')
 def home():
-    return "Gold Scalper AI Engine 24/7 Active & Running!"
+    return "Gold Scalper AI Engine 24/7 Active & Running!", 200
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -35,35 +34,37 @@ def keep_alive():
 
 def self_ping():
     """حماية سيرفر Render من الخمول عبر إرسال طلب ذاتي كل 10 دقائق"""
-    time.sleep(15)  # الانتظار حتى قيام السيرفر بالكامل
-    service_url = os.environ.get("RENDER_EXTERNAL_URL", "")
-    if service_url:
-        while True:
-            try:
-                requests.get(service_url, timeout=10)
-                logging.info("Self-ping sent successfully.")
-            except Exception as e:
-                logging.warning(f"Self-ping failed: {e}")
-            time.sleep(600)  # كل 10 دقائق
+    time.sleep(20)
+    service_url = os.environ.get("RENDER_EXTERNAL_URL", "https://gold-scalper-bot-6ydm.onrender.com").strip()
+    while True:
+        try:
+            requests.get(service_url, timeout=10)
+            logging.info("Self-ping sent successfully.")
+        except Exception as e:
+            logging.warning(f"Self-ping notice: {e}")
+        time.sleep(600)  # كل 10 دقائق
 
 # ---------------------------------------------------------
-# 2. البيانات المتغيرات والأمان (Environment Variables)
+# 2. الثوابت والمفاتيح الحساسة (الحل المباشر والاحتياطي)
 # ---------------------------------------------------------
-# قراءة التوكن بأمان من Render أو استخدام التوكن الافتراضي
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8672708333:AAEoW7OnuAod0-pPRLUABMGHyj61yGR93NU").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 SYMBOL = "XAUUSD"
 
-# تجهيز عميل Google Gemini الرسمى
+# إعداد مكتبة Google Gemini بأمان أقصى
 ai_client = None
 if GEMINI_API_KEY:
-    ai_client = genai.Client(api_key=GEMINI_API_KEY)
+    try:
+        from google import genai
+        ai_client = genai.Client(api_key=GEMINI_API_KEY)
+        logging.info("Google Gemini Client initialized successfully.")
+    except Exception as e:
+        logging.error(f"Failed to initialize Gemini Client: {e}")
 
-# قاموس مستقر ليدعم عدة مستخدمين مستقلين (Multi-User Support)
+# دعم عدة مستخدمين بدون تداخل
 user_states = {}
 
 def get_user_state(chat_id: int) -> dict:
-    """استرجاع أو إنشاء حالة مستقلة لكل مستخدم"""
     if chat_id not in user_states:
         user_states[chat_id] = {
             "in_trade": False,
@@ -72,7 +73,7 @@ def get_user_state(chat_id: int) -> dict:
     return user_states[chat_id]
 
 # ---------------------------------------------------------
-# 3. فحص أوقات وإغلاقات السوق (توقيت نيويورك)
+# 3. فحص أوقات السوق (توقيت نيويورك)
 # ---------------------------------------------------------
 def is_market_open() -> tuple[bool, str]:
     ny_tz = pytz.timezone("America/New_York")
@@ -103,22 +104,21 @@ markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    get_user_state(chat_id)  # تسجيل حالة المستخدم
+    get_user_state(chat_id)
 
     welcome_msg = (
-        "👑 **أهلاً بك في نظام سكالبينج الذهب الأوتوماتيكي (XAUUSD) Pro**\n\n"
-        "⚡ تم تفعيل الرادار التلقائي ليعمل في الكواليس على مدار 24/7.\n"
+        "👑 **أهلاً بك يا سراج في نظام سكالبينج الذهب (XAUUSD) Pro**\n\n"
+        "⚡ السيرفر متصل بنجاح 24/7 على منصة Render.\n"
         "🔔 سيصلك إشعار تحضيري قبل الصفقة بـ 5 دقائق، ثم إشعار دخول كامل عند اكتمال الشروط."
     )
     await update.message.reply_text(welcome_msg, reply_markup=markup, parse_mode="Markdown")
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """إعادة ضبط حالة التداول يدوياً"""
     chat_id = update.effective_chat.id
     state = get_user_state(chat_id)
     state["in_trade"] = False
     state["pending_warning"] = False
-    await update.message.reply_text("🔄 **تم إعادة ضبط التداول بنجاح!**\nالرادار يعمل الآن وجاهز لاستقبال أي فرصة جديدة.", reply_markup=markup, parse_mode="Markdown")
+    await update.message.reply_text("🔄 **تم إعادة ضبط التداول بنجاح!**\nالرادار جاهز ومستعد للعمل الآن.", reply_markup=markup, parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -132,16 +132,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"🔴 {reason}")
         else:
             if state["in_trade"]:
-                await update.message.reply_text("⚠️ **أنت حالياً داخل صفقة مفتوحة!**\nلن يتم البحث عن صفقات جديدة حتى تخرج من الصفقة الحالية وتضغط زر الخروج.")
+                await update.message.reply_text("⚠️ **أنت حالياً داخل صفقة مفتوحة!**\nاضغط 'تم إغلاق الصفقة' أولاً لاستقبال صفقات جديدة.")
             else:
-                await update.message.reply_text(f"🟢 {reason}\n🔎 **الرادار يعمل في الكواليس**، وسيتم تنبيهك فور اقتراب أي فرصة على فريم M1/M5.")
+                await update.message.reply_text(f"🟢 {reason}\n🔎 **الرادار يعمل في الكواليس**، وسيتم تنبيهك فور اقتراب أي فرصة.")
 
     elif text == "📈 تحليل صورة الشارت":
-        await update.message.reply_text("📸 **أرسل صورة الشارت (فريم M1 أو M5)** وسيقوم محرك Gemini AI بتحليلها فوراً!")
+        await update.message.reply_text("📸 **أرسل صورة الشارت (M1 أو M5)** وسيقوم الذكاء الاصطناعي بتحليلها فوراً!")
 
     elif text == "⚙️ حالة البوت والرمز":
         status_icon = "🟢" if is_open else "🔴"
-        ai_status = "🟢 متصل (Google Gemini Official API)" if GEMINI_API_KEY else "🔴 غير متصل (يرجى إضافة GEMINI_API_KEY)"
+        ai_status = "🟢 متصل (Google Gemini Official)" if ai_client else "🔴 غير متصل (يرجى التأكد من GEMINI_API_KEY)"
 
         if not is_open:
             trade_status = "🔴 متوقف (السوق مغلق)"
@@ -165,14 +165,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار المتاحة في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور المتقدم عبر Gemini (مع الماركداون)
+# 5. تحليل الصور عبر Gemini Vision
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ai_client:
-        await update.message.reply_text("⚠️ **مفتاح GEMINI_API_KEY غير مضاف في Render!**\nيرجى إضافته أولاً في متغيرات البيئة.")
+        await update.message.reply_text("⚠️ **مفتاح GEMINI_API_KEY غير مضاف أو غير مفعل في Render!**")
         return
 
-    await update.message.reply_text("📸 **تم استلام الشارت!** جاري تحليل الشموع واستخراج المستويات بدقة عبر محرك Gemini... ⏳")
+    await update.message.reply_text("📸 **تم استلام الشارت!** جاري التحليل عبر محرك Gemini... ⏳")
 
     try:
         photo_file = await update.message.photo[-1].get_file()
@@ -182,12 +182,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         prompt = (
             "أنت خبير تداول متقدم ومختص في إستراتيجيات السكالبينج لسوق الذهب (XAUUSD).\n"
-            "قم بتحليل صورة الشارت المرفقة بدقة عالية واستخرج النتائج التالية منسقة باستخدام رؤوس أوراق وإيموجيات وضبط النص بالماركداون:\n\n"
+            "قم بتحليل صورة الشارت المرفقة بدقة عالية واستخرج النتائج التالية منسقة بالماركداون:\n\n"
             "1. **الاتجاه الحالي (Trend):** (صاعد / هابط / عرضي)\n"
             "2. **مستويات الدعم والمقاومة القريبة:**\n"
             "3. **قراءة المؤشرات والشموع:**\n"
-            "4. **التوصية المقترحة:** (BUY / SELL / WAIT) مع توضيح السبب بدقة.\n"
-            "5. **نقاط الدخول والسكالبينج:** (نقطة الدخول، الهدف TP، وقف الخسارة SL)."
+            "4. **التوصية المقترحة:** (BUY / SELL / WAIT) مع ذكر السبب.\n"
+            "5. **أهداف السكالبينج:** (نقطة الدخول، الهدف TP، وقف الخسارة SL)."
         )
 
         response = ai_client.models.generate_content(
@@ -199,15 +199,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             full_response = f"📊 **نتائج تحليل الذكاء الاصطناعي (Gemini Vision):**\n\n{response.text}"
             await update.message.reply_text(full_response, parse_mode="Markdown")
         else:
-            raise Exception("لم يتم استلام رد صحيح من نموذج Gemini.")
+            raise Exception("لم يتم استلام رد صحيح من النموذج.")
 
     except Exception as e:
         logging.error(f"Error analyzing photo: {e}")
-        error_message = (
-            "⚠️ **حدث خطأ أثناء معالجة الصورة!**\n\n"
-            f"🔍 التفاصيل: `{str(e)}`"
-        )
-        await update.message.reply_text(error_message, parse_mode="Markdown")
+        await update.message.reply_text(f"⚠️ **حدث خطأ أثناء معالجة الصورة:** `{str(e)}`", parse_mode="Markdown")
 
 # ---------------------------------------------------------
 # 6. المراقبة الآلية والرادار (كل 15 دقيقة)
@@ -217,7 +213,6 @@ async def market_scanner_job(context: ContextTypes.DEFAULT_TYPE):
     if not is_open:
         return
 
-    # المسح لجميع المستخدمين الذين تواصلوا مع البوت
     for chat_id, state in user_states.items():
         if state["in_trade"]:
             continue
@@ -227,7 +222,7 @@ async def market_scanner_job(context: ContextTypes.DEFAULT_TYPE):
             warning_text = (
                 "⏳ **تنبيه تحضيري (قبل الصفقة بـ 5 دقائق):**\n\n"
                 "🔥 تم كشف سيولة متزايدة وتقارب في مؤشرات السكالبينج على الذهب (XAUUSD - M5).\n"
-                "🎯 جهز منصة التداول الخاصة بك، سيصلك إشعار الدخول المباشر فور اكتمال الشمعة!"
+                "🎯 جهز منصتك، سيصلك إشعار الدخول المباشر فور اكتمال الشمعة!"
             )
             await context.bot.send_message(chat_id=chat_id, text=warning_text, parse_mode="Markdown")
         else:
@@ -241,15 +236,15 @@ async def market_scanner_job(context: ContextTypes.DEFAULT_TYPE):
                 "🚀 **إشعار دخول صفقة سكالبينج الآن!**\n\n"
                 "📌 **الرمز:** XAUUSD (فريم M5)\n"
                 "🟢 **النوع:** شراء (BUY)\n"
-                "📍 **نقطة الدخول المقترحة:** السعر الحالي\n"
-                "🎯 **هدف الأرباح (TP):** +25 نقطة\n"
+                "📍 **الدخول:** السعر الحالي\n"
+                "🎯 **الهدف (TP):** +25 نقطة\n"
                 "🛑 **وقف الخسارة (SL):** -15 نقطة\n\n"
                 "هل قمت بالدخول في هذه الصفقة؟"
             )
             await context.bot.send_message(chat_id=chat_id, text=signal_text, reply_markup=buttons, parse_mode="Markdown")
 
 # ---------------------------------------------------------
-# 7. التفاعل مع أزرار الصفقة
+# 7. التفاعل مع الأزرار
 # ---------------------------------------------------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -272,25 +267,25 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "skipped_trade":
         state["in_trade"] = False
-        await query.edit_message_text("👍 **تم تجاهل الصفقة.** سيعود الرادار لمراقبة الفرص الجديدة تلقائياً.")
+        await query.edit_message_text("👍 **تم تجاهل الصفقة.** سيعود الرادار لمراقبة الفرص تلقائياً.")
 
     elif query.data == "exit_trade":
         state["in_trade"] = False
         await query.edit_message_text("🎉 **تم إغلاق الصفقة بنجاح.**\n🟢 تم إعادة تفعيل الرادار التلقائي لمسح السوق.")
 
 # ---------------------------------------------------------
-# 8. التشغيل الرئيسي
+# 8. التشغيل الرئيسي المقاوم للأخطاء
 # ---------------------------------------------------------
 def main():
-    # 1. تشغيل خادم Flask
+    # 1. تشغيل سيرفر Flask
     keep_alive()
 
-    # 2. تشغيل الـ Self-Ping لمنع انقطاع السيرفر
+    # 2. تشغيل الـ Self-Ping
     t_ping = Thread(target=self_ping)
     t_ping.daemon = True
     t_ping.start()
 
-    # 3. إعداد وتطبيق التلغرام
+    # 3. بناء تطبيق التلغرام
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
@@ -304,7 +299,8 @@ def main():
     if job_queue:
         job_queue.run_repeating(market_scanner_job, interval=900, first=10)
 
-    # 5. بدء الاستماع
+    # 5. تشغيل البوت
+    print("🚀 البوت شغال بنجاح ومستعد للتنفيذ...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
