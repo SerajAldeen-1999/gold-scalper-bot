@@ -1,6 +1,7 @@
 import os
 import io
 import logging
+import base64
 from datetime import datetime
 import pytz
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
@@ -124,43 +125,50 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر محرك الذكاء الاصطناعي المفتوح (بدون API Key)
+# 5. تحليل الصور عبر الذكاء الاصطناعي (تمرير الصورة بـ Base64)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📸 تم استلام الشارت! جاري التحليل المتقدم بواسطة الذكاء الاصطناعي... ⏳")
+    await update.message.reply_text("📸 تم استلام الشارت! جاري قراءة البيانات ورسم المستويات بواسطة الذكاء الاصطناعي... ⏳")
 
     try:
+        # تحميل الصورة وتحويلها إلى Base64
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
-        
+        base64_image = base64.b64encode(photo_bytes).decode('utf-8')
+
         prompt = (
             "أنت خبير تداول متقدم ومختص في إستراتيجيات السكالبينج لسوق الذهب (XAUUSD).\n"
-            "قم بتحليل الشارت المرفق بدقة عالية واستخرج النتائج التالية بلغة عربية واضحة ومباشرة:\n\n"
+            "قم بتحليل صورة الشارت المرفقة بدقة عالية واستخرج النتائج التالية بلغة عربية واضحة ومباشرة:\n\n"
             "1. الاتجاه الحالي (Trend): صاعد / هابط / عرضي.\n"
-            "2. مستويات الدعم والمقاومة القريبة المرئية.\n"
-            "3. حركة المؤشرات الشائعة إن وجدت (مثل RSI / MACD / الشموع).\n"
-            "4. التوصية المقترحة: (شراء BUY / بيع SELL / الانتظار) مع ذكر السبب باختصار شديد.\n"
+            "2. مستويات الدعم والمقاومة القريبة المرئية على الشارت.\n"
+            "3. حركة المؤشرات القريبة المرئية (مثل RSI / MACD / المتوسطات / الشموع).\n"
+            "4. التوصية المقترحة: (شراء BUY / بيع SELL / الانتظار) مع ذكر السبب باختصار.\n"
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
+        # إرسال النص والصورة بصيغة Data URI
         response = g4f.ChatCompletion.create(
             model=g4f.models.gpt_4o,
-            messages=[{"role": "user", "content": prompt}],
-            image=io.BytesIO(photo_bytes)
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                ]
+            }]
         )
         
         await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي:**\n\n{response}", parse_mode='Markdown')
 
     except Exception as e:
-        # احتياطي في حال تعثر النموذج المباشر
         try:
             response = g4f.ChatCompletion.create(
                 model="gpt-4",
-                messages=[{"role": "user", "content": "أعطني تحليل تقني سريع للسكالبينج على الذهب XAUUSD مع نقاط الدخول والهدف ووقف الخسارة."}]
+                messages=[{"role": "user", "content": "أعطني تحليل تقني سريع للسكالبينج على الذهب XAUUSD مع التوصية ونقاط الدخول والهدف والستوب."}]
             )
-            await update.message.reply_text(f"📊 **تحليل السكالبينج المقترح:**\n\n{response}", parse_mode='Markdown')
+            await update.message.reply_text(f"📊 **تحليل السكالبينج التقديري:**\n\n{response}", parse_mode='Markdown')
         except Exception as err:
-            await update.message.reply_text("❌ حدث خطأ في معالجة الصورة، يرجى إعادة إرسالها مرة أخرى.")
+            await update.message.reply_text("❌ حدث خطأ أثناء معالجة الصورة، يرجى إعادة إرسالها مجدداً.")
 
 # ---------------------------------------------------------
 # 6. المراقبة الآلية في الكواليس (كل 15 دقيقة)
