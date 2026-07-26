@@ -34,7 +34,6 @@ def keep_alive():
 # ---------------------------------------------------------
 # 2. البيانات الثابتة وإعداد الذكاء الاصطناعي
 # ---------------------------------------------------------
-# استخدام المفتاح الجديد المحدث للبوت
 BOT_TOKEN = "8672708333:AAEoW7OnuAod0-pPRLUABMGHyj61yGR93NU"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 SYMBOL = "XAUUSD"
@@ -111,7 +110,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "⚙️ حالة البوت والرمز":
         status_icon = "🟢" if is_open else "🔴"
         ai_status = "🟢 متصل" if GEMINI_API_KEY else "🔴 غير مفعل"
-        trade_status = "🔴 داخل صفقة حالياً" if user_states["in_trade"] else "🟢 جاهز لاستقبال صفقات"
+        
+        # تصحيح منطق حالة التداول:
+        if not is_open:
+            trade_status = "🔴 متوقف (السوق مغلق)"
+        elif user_states["in_trade"]:
+            trade_status = "🔴 داخل صفقة حالياً"
+        else:
+            trade_status = "🟢 جاهز لاستقبال صفقات"
         
         msg = (
             f"{status_icon} **حالة السوق:** {reason}\n"
@@ -124,7 +130,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر Gemini AI
+# 5. تحليل الصور عبر Gemini AI (استخدام gemini-1.5-flash لتجنب Quota Error)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ai_client:
@@ -148,8 +154,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
+        # تحويل الموديل إلى gemini-1.5-flash المتوافق مع الحسابات المجانية
         response = ai_client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-1.5-flash',
             contents=[prompt, image]
         )
         
