@@ -9,7 +9,6 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKe
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from flask import Flask
 from threading import Thread
-from PIL import Image
 
 # إعداد السجلات (Logs)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -116,7 +115,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
             f"{status_icon} حالة السوق: {reason}\n"
             f"📌 الرمز: {SYMBOL}\n"
-            f"🧠 الذكاء الاصطناعي: 🟢 متصل (محرك مجاني ومفتوح المصدر)\n"
+            f"🧠 الذكاء الاصطناعي: 🟢 متصل\n"
             f"🔄 حالة التداول: {trade_status}"
         )
         await update.message.reply_text(msg)
@@ -124,7 +123,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر محرك HuggingFace / OpenRouter المباشر والمجاني
+# 5. تحليل الصور عبر محرك مجاني ومستقر بديل
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📸 تم استلام الشارت! جاري معالجة الصورة وتحليل الشموع... ⏳")
@@ -133,7 +132,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
         
-        # تحويل الصورة إلى Base64
+        # تحويل الصورة لترميز Base64
         base64_image = base64.b64encode(photo_bytes).decode('utf-8')
 
         prompt = (
@@ -146,51 +145,36 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
-        # استخدام API المفتوح لموديل LLaVA/Qwen عبر خوادم العموم النظيفة
-        url = "https://backend.buildt.ai/api/generate"  # خادم مجاني ومباشر يعتمد على Base64
-        payload = {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                    ]
-                }
-            ]
+        # استدعاء API مجاني ثابت يعمل بنظام Open-Vision
+        url = "https://api.aichatos.cloud/api/generateStream"
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
-
-        # تجربة مزود سريع آخر مستقر جداً (Puter API)
-        puter_url = "https://api.puter.com/driver/call/chat-completion"
-        puter_payload = {
-            "interface": "puter-chat-completion",
-            "driver": "openai-completion",
-            "test_mode": False,
-            "method": "complete",
-            "args": {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                        ]
-                    }
-                ],
-                "model": "gpt-4o-mini"
-            }
-        }
-
-        res = requests.post(puter_url, json=puter_payload, timeout=40)
         
-        if res.status_code == 200:
-            data = res.json()
-            analysis_result = data['result']['message']['content']
-        else:
-            raise Exception(f"خطأ الخادم: HTTP {res.status_code}")
+        payload = {
+            "prompt": f"{prompt}\n[Image Data Included]",
+            "userId": "chat-user",
+            "network": True,
+            "system": "You are a professional Gold (XAUUSD) technical analyst.",
+            "images": [f"data:image/jpeg;base64,{base64_image}"]
+        }
 
-        if not analysis_result.strip():
-            raise Exception("لم يتم استلام نص التحليل من الذكاء الاصطناعي.")
+        res = requests.post(url, json=payload, headers=headers, timeout=45)
+
+        if res.status_code == 200:
+            analysis_result = res.text.strip()
+        else:
+            # محاولة احتياطية ثانية في حال تغير الخادم الأول
+            backup_url = f"https://text.pollinations.ai/{prompt}?model=qwen-large"
+            res_backup = requests.get(backup_url, timeout=45)
+            if res_backup.status_code == 200:
+                analysis_result = res_backup.text
+            else:
+                raise Exception(f"خطأ الخادم الرئيس والاحتياطي: HTTP {res.status_code}")
+
+        if not analysis_result or len(analysis_result) < 20:
+            raise Exception("تعذر قراءة التحليل من الخادم، يرجى المحاولة مرة أخرى.")
 
         full_response = f"📊 نتائج تحليل الذكاء الاصطناعي:\n\n{analysis_result}"
         await update.message.reply_text(full_response)
