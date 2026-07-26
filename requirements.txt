@@ -1,5 +1,6 @@
-python-telegram-bot
-flask
-pillow
-pytz
+python-telegram-bot==20.7
 requests
+pytz
+flask
+google-genai
+Pillow
