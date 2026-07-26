@@ -1,5 +1,5 @@
-python-telegram-bot
-flask
-google-genai
-pillow
-pytz
+aiogram>=3.0.0
+python-dotenv
+requests
+pandas
+ta
