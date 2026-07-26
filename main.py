@@ -32,10 +32,13 @@ def keep_alive():
     t.start()
 
 # ---------------------------------------------------------
-# 2. البيانات الثابتة
+# 2. البيانات الثابتة والمفاتيح الرسمية
 # ---------------------------------------------------------
 BOT_TOKEN = "8672708333:AAEoW7OnuAod0-pPRLUABMGHyj61yGR93NU"
 SYMBOL = "XAUUSD"
+
+# قراءة مفتاح OpenRouter من متغيرات البيئة في Render بأمان
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
 user_states = {
     "active_chat_id": None,
@@ -115,7 +118,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
             f"{status_icon} حالة السوق: {reason}\n"
             f"📌 الرمز: {SYMBOL}\n"
-            f"🧠 الذكاء الاصطناعي: 🟢 متصل\n"
+            f"🧠 الذكاء الاصطناعي: 🟢 متصل (OpenRouter Secure API)\n"
             f"🔄 حالة التداول: {trade_status}"
         )
         await update.message.reply_text(msg)
@@ -123,7 +126,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور عبر محرك مجاني ومستقر بديل
+# 5. تحليل الصور عبر OpenRouter API
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📸 تم استلام الشارت! جاري معالجة الصورة وتحليل الشموع... ⏳")
@@ -132,7 +135,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
         
-        # تحويل الصورة لترميز Base64
         base64_image = base64.b64encode(photo_bytes).decode('utf-8')
 
         prompt = (
@@ -145,36 +147,40 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5. تحديد نقطة الدخول، والهدف (TP)، ووقف الخسارة (SL) المناسبين للسكالبينج."
         )
 
-        # استدعاء API مجاني ثابت يعمل بنظام Open-Vision
-        url = "https://api.aichatos.cloud/api/generateStream"
+        url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
         }
         
         payload = {
-            "prompt": f"{prompt}\n[Image Data Included]",
-            "userId": "chat-user",
-            "network": True,
-            "system": "You are a professional Gold (XAUUSD) technical analyst.",
-            "images": [f"data:image/jpeg;base64,{base64_image}"]
+            "model": "qwen/qwen-2-vl-7b-instruct:free",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ]
         }
 
-        res = requests.post(url, json=payload, headers=headers, timeout=45)
+        response = requests.post(url, json=payload, headers=headers, timeout=60)
 
-        if res.status_code == 200:
-            analysis_result = res.text.strip()
+        if response.status_code == 200:
+            result_data = response.json()
+            analysis_result = result_data['choices'][0]['message']['content']
         else:
-            # محاولة احتياطية ثانية في حال تغير الخادم الأول
-            backup_url = f"https://text.pollinations.ai/{prompt}?model=qwen-large"
-            res_backup = requests.get(backup_url, timeout=45)
-            if res_backup.status_code == 200:
-                analysis_result = res_backup.text
-            else:
-                raise Exception(f"خطأ الخادم الرئيس والاحتياطي: HTTP {res.status_code}")
+            raise Exception(f"خطأ API ({response.status_code}): {response.text}")
 
-        if not analysis_result or len(analysis_result) < 20:
-            raise Exception("تعذر قراءة التحليل من الخادم، يرجى المحاولة مرة أخرى.")
+        if not analysis_result.strip():
+            raise Exception("لم يتم استلام رد من النموذج.")
 
         full_response = f"📊 نتائج تحليل الذكاء الاصطناعي:\n\n{analysis_result}"
         await update.message.reply_text(full_response)
