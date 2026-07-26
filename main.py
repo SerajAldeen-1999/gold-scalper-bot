@@ -116,7 +116,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
             f"{status_icon} **حالة السوق:** {reason}\n"
             f"📌 **الرمز:** {SYMBOL}\n"
-            f"🧠 **الذكاء الاصطناعي:** 🟢 متصل (خدمة مفتوحة بدون قيود)\n"
+            f"🧠 **الذكاء الاصطناعي:** 🟢 متصل (مزود مفتوح المصدر)\n"
             f"🔄 **حالة التداول:** {trade_status}"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
@@ -124,7 +124,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار في الأسفل.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 5. تحليل الصور باستخدام المحرك المفتوح (Pollinations AI / OpenAI Format)
+# 5. تحليل الصور ومعالجة الأخطاء بالتفصيل (Debug Mode)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📸 تم استلام الشارت! جاري قراءة البيانات ورسم المستويات بواسطة الذكاء الاصطناعي... ⏳")
@@ -161,22 +161,32 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     ]
                 }
             ],
-            "model": "openai",  # يتم تحويلها تلقائياً لأفضل نموذج رؤية مفتوح مثل GPT-4o / Qwen
+            "model": "openai",
             "jsonMode": False
         }
 
-        # إرسال الطلب لخادم Pollinations AI المفتوح والمجاني بالكامل
+        # إرسال الطلب لخادم الذكاء الاصطناعي
         response = requests.post("https://text.pollinations.ai/", json=payload, timeout=60)
         
+        # التأكد من حالة الاستجابة
         if response.status_code == 200:
             analysis_result = response.text
+            if not analysis_result.strip():
+                raise Exception("الخادم أرجع رداً فارغاً (Empty Response).")
+            
             await update.message.reply_text(f"📊 **نتائج تحليل الذكاء الاصطناعي:**\n\n{analysis_result}", parse_mode='Markdown')
         else:
-            raise Exception("فشل الاتصال بمزود الذكاء الاصطناعي المجاني")
+            raise Exception(f"خطأ HTTP {response.status_code} من الخادم:\n{response.text[:200]}")
 
     except Exception as e:
         logging.error(f"Error analyzing photo: {e}")
-        await update.message.reply_text("❌ حدث خطأ مؤقت أثناء تحليل الصورة، يرجى إعادة إرسالها بعد ثوانٍ قليلة.")
+        # إرسال نص الخطأ الدقيق إلى التليجرام
+        error_message = (
+            "⚠️ **حدث خطأ أثناء معالجة الصورة!**\n\n"
+            "🔍 **تفاصيل الخطأ (Debug Error):**\n"
+            f"`{str(e)}`"
+        )
+        await update.message.reply_text(error_message, parse_mode='Markdown')
 
 # ---------------------------------------------------------
 # 6. المراقبة الآلية في الكواليس (كل 15 دقيقة)
