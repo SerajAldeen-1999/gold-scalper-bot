@@ -183,7 +183,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ **مفتاح OPENROUTER_API_KEY غير متصل في إعدادات Render!**")
         return
     
-    await update.message.reply_text("📸 **جاري تحليل الشارت بالذكاء الاصطناعي عبر OpenRouter... ⏳**")
+    await update.message.reply_text("📸 **جاري تحليل الشارت بالذكاء الاصطناعي... ⏳**")
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
@@ -191,16 +191,17 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "json"
+            "Content-Type": "application/json"
         }
         
         payload = {
             "model": "google/gemini-2.5-flash",
+            "max_tokens": 1000,
             "messages": [
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "قم بتحليل الشارت المرفق واستخرج المستويات والاتجاه وتوصية سكالبينج."},
+                        {"type": "text", "text": "قم بتحليل الشارت المرفق واستخرج المستويات والاتجاه وتوصية سكالبينج بشكل مختصر ومباشر."},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                     ]
                 }
