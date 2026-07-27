@@ -17,7 +17,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ---------------------------------------------------------
-# 1. خادم Flask وإبقاء الخدمة مستيقظة
+# 1. خادم Flask وإبقاء الخدمة مستيقظة (Render Health Check)
 # ---------------------------------------------------------
 app_web = Flask('')
 
@@ -46,7 +46,7 @@ def self_ping():
         time.sleep(600)
 
 # ---------------------------------------------------------
-# 2. الإعدادات والمتغيرات
+# 2. الإعدادات والمتغيرات (سحب آمن من البيئة)
 # ---------------------------------------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
@@ -99,7 +99,7 @@ def fetch_gold_price():
         return None
 
 # ---------------------------------------------------------
-# 5. الرادار التلقائي
+# 5. الرادار التلقائي في الكواليس (Job Queue)
 # ---------------------------------------------------------
 last_processed_price = None
 
@@ -141,7 +141,7 @@ markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     get_user_state(chat_id)
-    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب Pro**\n\nالرادار التلقائي والذكاء الاصطناعي جاهزان للعمل.", reply_markup=markup, parse_mode="Markdown")
+    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب Pro**\n\nالرادار التلقائي والذكاء الاصطناعي جاهزان للعمل 24/7.", reply_markup=markup, parse_mode="Markdown")
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -180,10 +180,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not OPENROUTER_API_KEY:
-        await update.message.reply_text("⚠️ **مفتاح OPENROUTER_API_KEY غير متصل في إعدادات Render!**")
+        await update.message.reply_text("⚠️ مفتاح OPENROUTER_API_KEY غير متصل في إعدادات Render!")
         return
     
-    await update.message.reply_text("📸 **جاري تحليل الشارت بالذكاء الاصطناعي... ⏳**")
+    await update.message.reply_text("📸 جاري تحليل الشارت بالذكاء الاصطناعي... ⏳")
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
@@ -212,12 +212,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if "choices" in response and len(response["choices"]) > 0:
             analysis_text = response["choices"][0]["message"]["content"]
-            await update.message.reply_text(f"📊 **نتائج التحليل الذكي:**\n\n{analysis_text}", parse_mode="Markdown")
+            # إرسال التحليل كنص عادي لمنع أخطاء التنسيق في التلغرام
+            await update.message.reply_text(f"📊 نتائج التحليل الذكي:\n\n{analysis_text}")
         else:
-            await update.message.reply_text(f"⚠️ **خطأ من المزود:** `{str(response)}`", parse_mode="Markdown")
+            await update.message.reply_text(f"⚠️ خطأ من المزود: {str(response)}")
 
     except Exception as e:
-        await update.message.reply_text(f"⚠️ **حدث خطأ أثناء التحليل:** `{str(e)}`", parse_mode="Markdown")
+        await update.message.reply_text(f"⚠️ حدث خطأ أثناء التحليل: {str(e)}")
 
 # ---------------------------------------------------------
 # 7. التشغيل الرئيسي
