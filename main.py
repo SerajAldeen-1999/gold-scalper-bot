@@ -23,7 +23,7 @@ app_web = Flask('')
 
 @app_web.route('/')
 def home():
-    return "Gold Scalper AI Engine 24/7 Active & Running!", 200
+    return "Gold Scalper Pro AI Engine 24/7 Active & Running!", 200
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
@@ -46,7 +46,7 @@ def self_ping():
         time.sleep(600)
 
 # ---------------------------------------------------------
-# 2. الإعدادات والمتغيرات (سحب آمن من البيئة)
+# 2. الإعدادات والمتغيرات
 # ---------------------------------------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
@@ -81,7 +81,7 @@ def is_market_open() -> tuple[bool, str]:
     return True, "السوق مفتوح ومتاح للتداول."
 
 # ---------------------------------------------------------
-# 4. محرك جلب أسعار الذهب اللحظية
+# 4. جلب أسعار الذهب اللحظية
 # ---------------------------------------------------------
 def fetch_gold_price():
     try:
@@ -92,19 +92,15 @@ def fetch_gold_price():
         if "price" in res:
             return float(res["price"])
         else:
-            logging.error(f"TwelveData Error: {res}")
             return None
     except Exception as e:
         logging.error(f"Error fetching gold price: {e}")
         return None
 
 # ---------------------------------------------------------
-# 5. الرادار التلقائي في الكواليس (Job Queue)
+# 5. الرادار التلقائي (يفحص كل 15 دقيقة)
 # ---------------------------------------------------------
-last_processed_price = None
-
 async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
-    global last_processed_price
     is_open, _ = is_market_open()
     if not is_open:
         return
@@ -113,27 +109,22 @@ async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
     if current_price is None:
         return
 
-    if last_processed_price is not None:
-        price_diff = current_price - last_processed_price
-        if abs(price_diff) >= 1.5:
-            direction = "🚀 صعود قوي" if price_diff > 0 else "🔻 هبوط سريع"
-            msg = f"⚡️ **تنبيه حركة سريعة على الذهب ({SYMBOL})**\n\nالسعر الحالي: `{current_price}`\nالحركة: {direction} ({price_diff:+.2f}$)"
-            
-            for chat_id, state in user_states.items():
-                if state.get("radar_active", True):
-                    try:
-                        await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
-                    except Exception as e:
-                        logging.error(f"Failed to send alert to {chat_id}: {e}")
-
-    last_processed_price = current_price
+    # إرسال تحديث دوري كل 15 دقيقة يخبرك أن الرادار يراقب السوق وجاهز لاستقبال الشارت
+    msg = f"radar 📡 **تحديث رادار الذهب التلقائي (كل 15 دقيقة)**\n\nالسعر الحالي للذهب: `⚡ {current_price}`\nالبوت يراقب السيولة وجاهز لتحليل أي شارت ترسله بالبرومبت الاحترافي!"
+    
+    for chat_id, state in user_states.items():
+        if state.get("radar_active", True):
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+            except Exception as e:
+                logging.error(f"Failed to send radar alert to {chat_id}: {e}")
 
 # ---------------------------------------------------------
-# 6. الأوامر والواجهة
+# 6. الواجهة والأوامر
 # ---------------------------------------------------------
 main_keyboard = [
     ["🎯 سعر الذهب اللحظي", "📊 كيف وضع السوق؟"],
-    ["📈 تحليل صورة الشارت", "⚙️ حالة البوت والرمز"],
+    ["📈 تحليل صورة الشارت (SMC)", "⚙️ حالة البوت والرمز"],
     ["🔄 إعادة ضبط التداول"]
 ]
 markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
@@ -141,7 +132,7 @@ markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     get_user_state(chat_id)
-    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب Pro**\n\nالرادار التلقائي والذكاء الاصطناعي الاحترافي جاهزان للعمل 24/7.", reply_markup=markup, parse_mode="Markdown")
+    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب الاحترافي (SMC & Price Action)**\n\nالبوت مبرمج برومبت تداول 30 عام خبرة، وستصلك تنبيهات الرادار كل 15 دقيقة.", reply_markup=markup, parse_mode="Markdown")
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -157,20 +148,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🎯 سعر الذهب اللحظي":
         price = fetch_gold_price()
         if price:
-            await update.message.reply_text(f"💰 **سعر الذهب الآن ({SYMBOL}):** `${price}`\n🟢 الرادار يفحص الحركة تلقائياً.", parse_mode="Markdown")
+            await update.message.reply_text(f"💰 **سعر الذهب الآن ({SYMBOL}):** `${price}`\n🟢 الرادار يعمل في الخلفية.", parse_mode="Markdown")
         else:
             await update.message.reply_text("⚠️ متعذر جلب السعر حالياً.")
 
     elif text == "📊 كيف وضع السوق؟":
         await update.message.reply_text(f"ℹ️ {reason}")
 
-    elif text == "📈 تحليل صورة الشارت":
-        await update.message.reply_text("📸 **أرسل صورة الشارت الآن لتحليلها بالذكاء الاصطناعي (وفق قواعد المحترفين)!**")
+    elif text == "📈 تحليل صورة الشارت (SMC)":
+        await update.message.reply_text("📸 **أرسل صورة الشارت الآن لتطبيق التحليل الفني العميق (SMC، السيولة، الأهداف، ووقف الخسارة)...**")
 
     elif text == "⚙️ حالة البوت والرمز":
         status_icon = "🟢" if is_open else "🔴"
-        ai_status = "🟢 متصل عبر OpenRouter (محترف)" if OPENROUTER_API_KEY else "🔴 غير متصل"
-        await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار:** 🟢 شغال\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
+        ai_status = "🟢 متصل (برومبت احترافي مفعل)" if OPENROUTER_API_KEY else "🔴 غير متصل"
+        await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار (كل 15 دقيقة):** 🟢 شغال\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
 
     elif text == "🔄 إعادة ضبط التداول":
         await reset_command(update, context)
@@ -183,7 +174,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ مفتاح OPENROUTER_API_KEY غير متصل في إعدادات Render!")
         return
     
-    await update.message.reply_text("📸 جاري قراءة الشارت وتطبيق قواعد التداول الصارمة للمحترفين... ⏳")
+    await update.message.reply_text("🔍 جاري فحص الشارت باستخدام خوارزميات الذكاء الاصطناعي المتقدمة (SMC & Liquidity)... يرجى الانتظار ⏳")
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
@@ -194,27 +185,38 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Content-Type": "application/json"
         }
         
-        # برومبت احترافي وصارم جداً لمنع الشراء من القمم أو البيع من القيعان
+        # البرومبت الاحترافي القوي الذي طلبته بالكامل وبدون أي نقصان
         system_prompt = (
-            "أنت خبير متداول سكالبينج محترف متخصص في الذهب (XAU/USD).\n"
-            "حلل الشارت المرفق بناءً على هذه القواعد الصارمة جداً:\n"
-            "1. انظر إلى السعر الحالي مقارنة بأقرب قمة وقاع على الشارت:\n"
-            "   - يمنع منعاً باتاً التوصية بـ (شراء/BUY) إذا كان السعر عند القمة أو قريب منها جداً (أقل من 0.5 دولار).\n"
-            "   - يمنع منعاً باتاً التوصية بـ (بيع/SELL) إذا كان السعر عند القاع أو قريب منه جداً.\n"
-            "2. افحص مؤشر MACD و RSI:\n"
-            "   - إذا كانت أشرطة MACD تتناقص والسعر يصعد، اذكر وجود ضعف في الزخم (Divergence) ونصح بعدم الدخول العشوائي.\n"
-            "3. إذا كان السوق متذبذباً أو عند مناطق حسم، ضع القرار: (انتظار / WAIT) واذكر السبب.\n"
-            "4. رتب إجابتك بتنسيق واضح ومباشر:\n"
-            "   - الاتجاه العام اللحظي:\n"
-            "   - المستويات المفتاحية (الدعم والمقاومة):\n"
-            "   - حالة الزخم (MACD & RSI):\n"
-            "   - التوصية الصارمة (BUY / SELL / WAIT):\n"
-            "   - الأهداف (TP) ووقف الخسارة (SL) إن وجدت فرصة حقيقية."
+            "أنت محلل تداول احترافي بخبرة تزيد عن 30 عامًا في التحليل الفني، ومتخصص في الذهب (XAU/USD) والعملات الرقمية. "
+            "حلّل الصورة المرفقة وكأنها لقطة مباشرة من منصة TradingView.\n\n"
+            "أريد تحليلاً احترافيًا يتضمن:\n"
+            "1. تحديد الاتجاه العام (صاعد - هابط - عرضي).\n"
+            "2. تحليل هيكل السوق (Market Structure): HH, HL, LH, LL.\n"
+            "3. تحديد مناطق الدعم والمقاومة القوية.\n"
+            "4. تحديد مناطق العرض والطلب (Supply & Demand).\n"
+            "5. رسم خطوط الترند المهمة.\n"
+            "6. تحليل السيولة (Liquidity) وأماكن تجميع أو اصطياد وقف الخسارة.\n"
+            "7. تحليل Smart Money Concepts (SMC) إن وجدت: BOS, CHOCH, Order Blocks, Fair Value Gap (FVG), Breaker Block.\n"
+            "8. استخدام مؤشرات مثل RSI وMACD وVolume إذا كانت ظاهرة في الصورة.\n"
+            "9. تحديد ما إذا كانت هناك شموع انعكاسية أو نماذج سعرية.\n"
+            "10. تحديد أفضل سيناريو للتداول فقط إذا توفرت جميع شروط الدخول.\n\n"
+            "وفي النهاية أعطني النتيجة بهذا الشكل الدقيق:\n"
+            "- نوع الصفقة: شراء / بيع / لا توجد صفقة.\n"
+            "- سبب الدخول.\n"
+            "- سعر الدخول المقترح.\n"
+            "- وقف الخسارة (Stop Loss).\n"
+            "- الهدف الأول.\n"
+            "- الهدف الثاني.\n"
+            "- الهدف الثالث.\n"
+            "- نسبة المخاطرة إلى العائد (Risk/Reward).\n"
+            "- نسبة الثقة في التحليل من 0 إلى 100 مع توضيح سبب هذه النسبة.\n"
+            "- إذا كانت الصورة غير كافية لاتخاذ قرار، اكتب بوضوح: 'لا توجد صفقة بسبب نقص المعطيات'، ولا تخمّن.\n"
+            "- لا تعطِ أي توصية إلا إذا كانت الإشارة قوية ومدعومة بعدة عوامل فنية متوافقة."
         )
 
         payload = {
             "model": "google/gemini-2.5-flash",
-            "max_tokens": 1000,
+            "max_tokens": 1500,  # مساحة كافية لتوليد تحليل طويل ومفصل
             "messages": [
                 {
                     "role": "user",
@@ -226,16 +228,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         }
         
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=30).json()
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=45).json()
         
         if "choices" in response and len(response["choices"]) > 0:
             analysis_text = response["choices"][0]["message"]["content"]
-            await update.message.reply_text(f"📊 التحليل المحترف (نظام الصارم):\n\n{analysis_text}")
+            await update.message.reply_text(f"📊 **التقرير الاحترافي الشامل (SMC & Price Action):**\n\n{analysis_text}", parse_mode="Markdown")
         else:
-            await update.message.reply_text(f"⚠️ خطأ من المزود: {str(response)}")
+            await update.message.reply_text(f"⚠️ خطأ من المزود الذكي: {str(response)}")
 
     except Exception as e:
-        await update.message.reply_text(f"⚠️ حدث خطأ أثناء التحليل: {str(e)}")
+        await update.message.reply_text(f"⚠️ حدث خطأ أثناء معالجة الصورة: {str(e)}")
 
 # ---------------------------------------------------------
 # 7. التشغيل الرئيسي
@@ -250,14 +252,15 @@ def main():
     application = builder.build()
 
     job_queue = application.job_queue
-    job_queue.run_repeating(gold_radar_job, interval=60, first=10)
+    # ضبط الرادار ليعمل كل 15 دقيقة (900 ثانية)
+    job_queue.run_repeating(gold_radar_job, interval=900, first=10)
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("reset", reset_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("🚀 البوت والذكاء الاصطناعي المحترف يعملان بنجاح...")
+    print("🚀 البوت يعمل الآن بكامل طاقته (الرادار كل 15 دقيقة + برومبت 30 عام خبرة)...")
     application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == '__main__':
