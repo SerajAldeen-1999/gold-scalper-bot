@@ -4,20 +4,12 @@ import time
 import base64
 import logging
 import requests
-import json
 from datetime import datetime
 import pytz
 from threading import Thread
 from flask import Flask
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-
-# محاولة استيراد مكتبة MetaTrader 5 (تتطلب نظام Windows مثبت عليه MT5)
-try:
-    import MetaTrader5 as mt5
-    MT5_AVAILABLE = True
-except ImportError:
-    MT5_AVAILABLE = False
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # ---------------------------------------------------------
 # إعداد السجلات (Logs)
@@ -25,13 +17,13 @@ except ImportError:
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ---------------------------------------------------------
-# 1. خادم Flask لإبقاء الخدمة مستيقظة
+# 1. خادم Flask وإبقاء الخدمة مستيقظة (Render Health Check)
 # ---------------------------------------------------------
 app_web = Flask('')
 
 @app_web.route('/')
 def home():
-    return "Gold Scalper Pro MT5 Auto-Execution Engine Active!", 200
+    return "Gold Scalper Pro AI Engine 24/7 Active & Running!", 200
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
@@ -42,90 +34,146 @@ def keep_alive():
     t.daemon = True
     t.start()
 
+def self_ping():
+    time.sleep(20)
+    service_url = os.environ.get("RENDER_EXTERNAL_URL", "https://gold-scalper-bot-6ydm.onrender.com").strip()
+    while True:
+        try:
+            requests.get(service_url, timeout=10)
+            logging.info("Self-ping sent successfully.")
+        except Exception as e:
+            logging.warning(f"Self-ping notice: {e}")
+        time.sleep(600)
+
 # ---------------------------------------------------------
-# 2. الإعدادات وبيانات الحساب الديمو المباشرة
+# 2. الإعدادات والمتغيرات
 # ---------------------------------------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
+TWELVE_DATA_API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "").strip()
 
-# 🔒 بيانات حساب JustMarket الديمو المباشرة الخاصة بك:
-MT5_LOGIN = 1200247173
-MT5_PASSWORD = "111213_Seraj"
-MT5_SERVER = "JustMarket-Demo3"
+SYMBOL = "XAU/USD"
+user_states = {}
 
-SYMBOL = "XAUUSD"
-LOT_SIZE = 0.01          # حجم اللوت الافتراضي
-SL_BUFFER_PRICE = 1.5    # هامش الأمان الإضافي للستوب لوز (1.5 دولار لحماية الصفقة)
+def get_user_state(chat_id: int) -> dict:
+    if chat_id not in user_states:
+        user_states[chat_id] = {"in_trade": False, "radar_active": True}
+    return user_states[chat_id]
 
 # ---------------------------------------------------------
-# 3. الاتصال بحساب MetaTrader 5
+# 3. فحص أوقات سوق الذهب (XAU/USD)
 # ---------------------------------------------------------
-def init_mt5_connection():
-    if not MT5_AVAILABLE:
-        logging.warning("مكتبة MetaTrader5 غير مثبتة أو النظام ليس Windows.")
-        return False
+def is_market_open() -> tuple[bool, str]:
+    ny_tz = pytz.timezone("America/New_York")
+    now_ny = datetime.now(ny_tz)
+    weekday = now_ny.weekday()
+    hour = now_ny.hour
+
+    if weekday == 4 and hour >= 17:
+        return False, "السوق مغلق حالياً (إجازة نهاية الأسبوع)."
+    if weekday == 5:
+        return False, "السوق مغلق حالياً (السبت)."
+    if weekday == 6 and hour < 18:
+        return False, "السوق مغلق حالياً (يفتح الأحد 6:00 م بتوقيت نيويورك)."
+    if weekday in [0, 1, 2, 3] and hour == 17:
+        return False, "السوق مغلق لفترة التسوية اليومية."
+
+    return True, "السوق مفتوح ومتاح للتداول."
+
+# ---------------------------------------------------------
+# 4. جلب أسعار الذهب اللحظية
+# ---------------------------------------------------------
+def fetch_gold_price():
+    try:
+        if not TWELVE_DATA_API_KEY:
+            return None
+        url = f"https://api.twelvedata.com/price?symbol={SYMBOL}&apikey={TWELVE_DATA_API_KEY}"
+        res = requests.get(url, timeout=10).json()
+        if "price" in res:
+            return float(res["price"])
+        else:
+            return None
+    except Exception as e:
+        logging.error(f"Error fetching gold price: {e}")
+        return None
+
+# ---------------------------------------------------------
+# 5. الرادار التلقائي (يفحص ويرسل تنبيه كل 15 دقيقة)
+# ---------------------------------------------------------
+async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
+    is_open, _ = is_market_open()
+    if not is_open:
+        return
+
+    current_price = fetch_gold_price()
+    if current_price is None:
+        return
+
+    msg = f"📡 **تحديث رادار الذهب التلقائي (كل 15 دقيقة)**\n\nالسعر الحالي للذهب: `{current_price}`\nأرسل صورة الشارت للحصول على التوصية السريعة والمركزة!"
     
-    if not mt5.initialize():
-        logging.error(f"فشل تهيئة MT5: {mt5.last_error()}")
-        return False
+    for chat_id, state in user_states.items():
+        if state.get("radar_active", True):
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+            except Exception as e:
+                logging.error(f"Failed to send radar alert to {chat_id}: {e}")
 
-    authorized = mt5.login(login=MT5_LOGIN, password=MT5_PASSWORD, server=MT5_SERVER)
-    if authorized:
-        logging.info("✅ تم الاتصال بحساب MetaTrader 5 بنجاح!")
-        return True
+# ---------------------------------------------------------
+# 6. الواجهة والأوامر
+# ---------------------------------------------------------
+main_keyboard = [
+    ["🎯 سعر الذهب اللحظي", "📊 كيف وضع السوق؟"],
+    ["📈 تحليل صورة الشارت (توصية سريعة)", "⚙️ حالة البوت والرمز"],
+    ["🔄 إعادة ضبط التداول"]
+]
+markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    get_user_state(chat_id)
+    await update.message.reply_text("👑 **أهلاً بك في نظام توصيات سكالبينج الذهب السريع**\n\nأرسل صورة الشارت مباشرة لتصلك التوصية الدقيقة في أسطر معدودة.", reply_markup=markup, parse_mode="Markdown")
+
+async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    state = get_user_state(chat_id)
+    state["in_trade"] = False
+    await update.message.reply_text("🔄 **تم إعادة ضبط التداول بنجاح!**", reply_markup=markup, parse_mode="Markdown")
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    chat_id = update.effective_chat.id
+    is_open, reason = is_market_open()
+
+    if text == "🎯 سعر الذهب اللحظي":
+        price = fetch_gold_price()
+        if price:
+            await update.message.reply_text(f"💰 **سعر الذهب الآن ({SYMBOL}):** `${price}`\n🟢 الرادار يعمل بانتظام.", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("⚠️ متعذر جلب السعر حالياً.")
+
+    elif text == "📊 كيف وضع السوق؟":
+        await update.message.reply_text(f"ℹ️ {reason}")
+
+    elif text == "📈 تحليل صورة الشارت (توصية سريعة)":
+        await update.message.reply_text("📸 **أرسل صورة الشارت الآن لاستخراج التوصية والأهداف مباشرة...**")
+
+    elif text == "⚙️ حالة البوت والرمز":
+        status_icon = "🟢" if is_open else "🔴"
+        ai_status = "🟢 متصل (نظام التوصيات السريعة)" if OPENROUTER_API_KEY else "🔴 غير متصل"
+        await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار:** 🟢 شغال\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
+
+    elif text == "🔄 إعادة ضبط التداول":
+        await reset_command(update, context)
+
     else:
-        logging.error(f"❌ فشل تسجيل الدخول لـ MT5: {mt5.last_error()}")
-        return False
+        await update.message.reply_text("يرجى استخدام الأزرار المتاحة.", reply_markup=markup)
 
-# ---------------------------------------------------------
-# 4. دالة تنفيذ الصفقة الفعلية على MT5
-# ---------------------------------------------------------
-def execute_mt5_order(action_type: str, sl_price: float, tp_price: float):
-    if not MT5_AVAILABLE or not mt5.terminal_info():
-        if not init_mt5_connection():
-            return False, "غير قادر على الاتصال بمنصة MetaTrader 5 (تأكد أن البرنامج شغال على جهاز Windows)."
-
-    symbol_info = mt5.symbol_select(SYMBOL, True)
-    if not symbol_info:
-        return False, f"الرمز {SYMBOL} غير متاح في المنصة."
-
-    tick = mt5.symbol_info_tick(SYMBOL)
-    if not tick:
-        return False, "تعذر جلب سعر السوق اللحظي من MT5."
-
-    order_type = mt5.ORDER_TYPE_BUY if action_type == "BUY" else mt5.ORDER_TYPE_SELL
-    price = tick.ask if action_type == "BUY" else tick.bid
-
-    request = {
-        "action": mt5.TRADE_ACTION_DEAL,
-        "symbol": SYMBOL,
-        "volume": LOT_SIZE,
-        "type": order_type,
-        "price": price,
-        "sl": float(sl_price),
-        "tp": float(tp_price),
-        "deviation": 20,
-        "magic": 100200,
-        "comment": "Gold Scalper Telegram AI",
-        "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": mt5.ORDER_FILLING_IOC,
-    }
-
-    result = mt5.order_send(request)
-    if result.retcode != mt5.TRADE_RETCODE_DONE:
-        return False, f"فشل تنفيذ الأمر: {result.comment} (كود: {result.retcode})"
-    
-    return True, f"تم فتح صفقة {action_type} بنجاح عند السعر {result.price}!"
-
-# ---------------------------------------------------------
-# 5. معالجة الصور والتوصيات والأزرار التفاعلية
-# ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not OPENROUTER_API_KEY:
-        await update.message.reply_text("⚠️ مفتاح OPENROUTER_API_KEY غير متصل!")
+        await update.message.reply_text("⚠️ مفتاح OPENROUTER_API_KEY غير متصل في إعدادات Render!")
         return
     
-    await update.message.reply_text("⚡️ جاري تحليل الشارت واستخراج التوصية مع حساب الستوب المعدل... ⏳")
+    await update.message.reply_text("⚡️ جاري استخراج التوصية السريعة والمركزة... ⏳")
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
@@ -136,24 +184,25 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Content-Type": "application/json"
         }
         
+        # برومبت صارم جداً للتركيز والاختصار في 5 أسطر فقط
         system_prompt = (
-            "أنت خبير تداول سكالبينج محترف للذهب (XAU/USD).\n"
-            "حلل الشارت المرفق واستخرج التوصية مباشرة بتنسيق JSON حصراً وبدون أي مقدمات أو نصوص خارج الـ JSON.\n\n"
-            "ملاحظة الستوب لوز (SL): احسب SL بدقة أسفل/أعلى الهيكل.\n\n"
-            "صيغة الـ JSON المطلوبة تماماً:\n"
-            "{\n"
-            '  "action": "BUY" أو "SELL" أو "WAIT",\n'
-            '  "entry": 4075.50,\n'
-            '  "tp1": 4077.50,\n'
-            '  "sl": 4073.50,\n'
-            '  "rr": "1:2",\n'
-            '  "note": "سبب الدخول باختصار"\n'
-            "}"
+            "أنت خبير تداول سكالبينج محترف في الذهب (XAU/USD).\n"
+            "حلل الشارت المرفق وأعطني الخلاصة المباشرة والتوصية فوراً في فقرة قصيرة ومحددة جداً (لا تتجاوز 5 أو 6 أسطر إطلاقاً).\n"
+            "ممنوع التحليلات الطويلة أو التفاصيل النظرية.\n\n"
+            "التزم بالتنسيق التالي بالحرف:\n"
+            "🎯 توصية سكالبينج سريعة (XAU/USD):\n"
+            "• سعر الذهب الحالي: [اكتب السعر الظاهر على الشارت]\n"
+            "• التوصية: [شراء BUY / بيع SELL / انتظار WAIT]\n"
+            "• سعر الدخول المقترح: [سعر الدخول]\n"
+            "• أهداف الأرباح (TP): TP1: [سعر] | TP2: [سعر]\n"
+            "• وقف الخسارة (SL): [سعر]\n"
+            "• المخاطرة للعائد (R:R): [مثلاً 1:1.5]\n"
+            "💡 شرط التنفيذ / نصيحة ذكية: [سطر واحد فقط يوضح سبب القرار أو شرط الدخول]"
         )
 
         payload = {
             "model": "google/gemini-2.5-flash",
-            "max_tokens": 400,
+            "max_tokens": 500,  # تقليل التوكنز لضمان الإجابة المختصرة والسريعة
             "messages": [
                 {
                     "role": "user",
@@ -168,88 +217,35 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=30).json()
         
         if "choices" in response and len(response["choices"]) > 0:
-            content = response["choices"][0]["message"]["content"].strip()
-            clean_json = content.replace("```json", "").replace("```", "").strip()
-            data = json.loads(clean_json)
-
-            action = data.get("action", "WAIT")
-            entry = data.get("entry", 0.0)
-            tp1 = data.get("tp1", 0.0)
-            sl_raw = data.get("sl", 0.0)
-            note = data.get("note", "")
-
-            if action in ["BUY", "SELL"]:
-                # تطبيق هامش الأمان (SL Buffer) لمنع ضرب الاستوبات السريعة
-                if action == "BUY":
-                    adjusted_sl = round(sl_raw - SL_BUFFER_PRICE, 2)
-                else:
-                    adjusted_sl = round(sl_raw + SL_BUFFER_PRICE, 2)
-
-                text_msg = (
-                    f"🎯 **توصية سكالبينج جاهزة للتنفيذ (XAU/USD):**\n\n"
-                    f"• الاتجاه: **{action}**\n"
-                    f"• سعر الدخول: `{entry}`\n"
-                    f"• الهدف (TP1): `{tp1}`\n"
-                    f"• الستوب الأساسي: `{sl_raw}`\n"
-                    f"🛡️ **الستوب لوز المعدل (مع هامش الأمان):** `{adjusted_sl}`\n"
-                    f"💡 **ملاحظة:** {note}\n\n"
-                    f"👇 اضغط على الزر أدناه لتنفيذ الصفقة فوراً بحذافيرها على MT5:"
-                )
-
-                cbd = f"TRADE|{action}|{adjusted_sl}|{tp1}"
-                keyboard = [
-                    [InlineKeyboardButton(f"🚀 تنفيذ صفقة {action} الآن على MT5", callback_data=cbd)]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-
-                await update.message.reply_text(text_msg, reply_markup=reply_markup, parse_mode="Markdown")
-            else:
-                await update.message.reply_text(f"🎯 **توصية سكالبينج (XAU/USD):**\n\n• التوصية: **انتظار (WAIT)**\n💡 **السبب:** {note}")
-
+            analysis_text = response["choices"][0]["message"]["content"]
+            await update.message.reply_text(f"{analysis_text}")
         else:
-            await update.message.reply_text(f"⚠️ خطأ من الذكاء الاصطناعي: {str(response)}")
+            await update.message.reply_text(f"⚠️ خطأ من المزود الذكي: {str(response)}")
 
     except Exception as e:
-        await update.message.reply_text(f"⚠️ حدث خطأ في تحليل التوصية: {str(e)}")
-
-# ---------------------------------------------------------
-# 6. معالجة نقرة زر التنفيذ التفاعلي
-# ---------------------------------------------------------
-async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    data = query.data.split("|")
-    if data[0] == "TRADE":
-        action = data[1]
-        sl = float(data[2])
-        tp = float(data[3])
-
-        await query.edit_message_reply_markup(reply_markup=None) # إخفاء الزر لمنع التكرار
-        await query.message.reply_text(f"⏳ جاري إرسال صفقة {action} فوراً لمنصة MetaTrader 5...")
-
-        # تنفيذ الصفقة على منصة MT5
-        success, msg = execute_mt5_order(action, sl, tp)
-
-        if success:
-            await query.message.reply_text(f"✅ {msg}\n🛑 SL: `{sl}`\n🎯 TP: `{tp}`", parse_mode="Markdown")
-        else:
-            await query.message.reply_text(f"❌ لم تتم الصفقة: {msg}")
+        await update.message.reply_text(f"⚠️ حدث خطأ أثناء معالجة الصورة: {str(e)}")
 
 # ---------------------------------------------------------
 # 7. التشغيل الرئيسي
 # ---------------------------------------------------------
 def main():
     keep_alive()
-    init_mt5_connection()
+    t_ping = Thread(target=self_ping)
+    t_ping.daemon = True
+    t_ping.start()
 
     builder = Application.builder().token(BOT_TOKEN)
     application = builder.build()
 
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    application.add_handler(CallbackQueryHandler(handle_button_click))
+    job_queue = application.job_queue
+    job_queue.run_repeating(gold_radar_job, interval=900, first=10)
 
-    print("🚀 البوت متصل ومستعد لتنفيذ الصفقات بنقرة زر...")
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("reset", reset_command))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
+    print("🚀 البوت يعمل الآن بنظام التوصيات السريعة والمركزة...")
     application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == '__main__':
