@@ -46,11 +46,11 @@ def self_ping():
         time.sleep(600)
 
 # ---------------------------------------------------------
-# 2. الإعدادات والمتغيرات
+# 2. الإعدادات والمتغيرات (سحب آمن من البيئة)
 # ---------------------------------------------------------
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8672708333:AAHiWvvPzjx92vll3MZJhpRtbGNRauxLTSA").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-TWELVE_DATA_API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "cf4c8efbc8604a818e7d7dc0379c8a12").strip()
+TWELVE_DATA_API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "").strip()
 
 SYMBOL = "XAU/USD"
 user_states = {}
@@ -94,6 +94,8 @@ def is_market_open() -> tuple[bool, str]:
 # ---------------------------------------------------------
 def fetch_gold_price():
     try:
+        if not TWELVE_DATA_API_KEY:
+            return None
         url = f"https://api.twelvedata.com/price?symbol={SYMBOL}&apikey={TWELVE_DATA_API_KEY}"
         res = requests.get(url, timeout=10).json()
         if "price" in res:
@@ -120,15 +122,12 @@ async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
     if current_price is None:
         return
 
-    # فحص تغيّر السعر أو تحقق شروط التحليل
     if last_processed_price is not None:
         price_diff = current_price - last_processed_price
-        # إذا تحرك السعر بأكثر من 1.5 دولار مثلاً، يرسل تنبيه
         if abs(price_diff) >= 1.5:
             direction = "🚀 صعود قوي" if price_diff > 0 else "🔻 هبوط سريع"
             msg = f"⚡️ **تنبيه حركة سريعة على الذهب ({SYMBOL})**\n\nالسعر الحالي: `{current_price}`\nالحركة: {direction} ({price_diff:+.2f}$)"
             
-            # إرسال التنبيه لكل المستخدمين المسجلين
             for chat_id, state in user_states.items():
                 if state.get("radar_active", True):
                     try:
@@ -151,7 +150,7 @@ markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     get_user_state(chat_id)
-    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب Pro**\n\nالرادار التلقائي يعمل الآن في الكواليس لتتبع الأسعار والصفقات 24/7.", reply_markup=markup, parse_mode="Markdown")
+    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب Pro**\n\nالرادار التلقائي والذكاء الاصطناعي جاهزان تماماً للعمل 24/7.", reply_markup=markup, parse_mode="Markdown")
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -170,17 +169,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if price:
             await update.message.reply_text(f"💰 **سعر الذهب الآن ({SYMBOL}):** `${price}`\n🟢 الرادار يفحص الحركة تلقائياً.", parse_mode="Markdown")
         else:
-            await update.message.reply_text("⚠️ متعذر جلب السعر حالياً، حاول مجدداً بعد قليل.")
+            await update.message.reply_text("⚠️ متعذر جلب السعر حالياً، تأكد من إعدادات المفتاح.")
 
     elif text == "📊 كيف وضع السوق؟":
         await update.message.reply_text(f"ℹ️ {reason}")
 
     elif text == "📈 تحليل صورة الشارت":
-        await update.message.reply_text("📸 **أرسل صورة الشارت لتحليلها بواسطة الذكاء الاصطناعي!**")
+        await update.message.reply_text("📸 **أرسل صورة الشارت الآن لتحليلها بالذكاء الاصطناعي!**")
 
     elif text == "⚙️ حالة البوت والرمز":
         status_icon = "🟢" if is_open else "🔴"
-        ai_status = "🟢 متصل" if ai_client else "🔴 غير متصل"
+        ai_status = "🟢 متصل وجاهز" if ai_client else "🔴 غير متصل"
         await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار:** 🟢 شغال كل 60 ثانية\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
 
     elif text == "🔄 إعادة ضبط التداول":
@@ -191,18 +190,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ai_client:
-        await update.message.reply_text("⚠️ **مفتاح GEMINI_API_KEY غير متصل!**")
+        await update.message.reply_text("⚠️ **مفتاح GEMINI_API_KEY غير متصل في إعدادات Render!**")
         return
     await update.message.reply_text("📸 **جاري تحليل الشارت بالذكاء الاصطناعي... ⏳**")
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
         image = Image.open(io.BytesIO(photo_bytes))
-        prompt = "قم بتحليل الشارت المرفق واستخرج الاتجاه، والدعم/المقاومة، والتوصية."
+        prompt = "قم بتحليل الشارت المرفق استناداً إلى حركة السعر والدعم والمقاومة، وأعطني توقعاً لصفقة سكالبينج."
         response = ai_client.models.generate_content(model='gemini-2.5-flash', contents=[prompt, image])
-        await update.message.reply_text(f"📊 **نتائج التحليل:**\n\n{response.text}", parse_mode="Markdown")
+        await update.message.reply_text(f"📊 **نتائج التحليل الذكي:**\n\n{response.text}", parse_mode="Markdown")
     except Exception as e:
-        await update.message.reply_text(f"⚠️ **خطأ:** `{str(e)}`", parse_mode="Markdown")
+        await update.message.reply_text(f"⚠️ **حدث خطأ أثناء التحليل:** `{str(e)}`", parse_mode="Markdown")
 
 # ---------------------------------------------------------
 # 7. التشغيل الرئيسي
@@ -216,7 +215,6 @@ def main():
     builder = Application.builder().token(BOT_TOKEN)
     application = builder.build()
 
-    # تفعيل الرادار الدوري (يفحص السعر في الكواليس كل 60 ثانية)
     job_queue = application.job_queue
     job_queue.run_repeating(gold_radar_job, interval=60, first=10)
 
@@ -225,7 +223,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("🚀 البوت والرادار شغالين بنجاح...")
+    print("🚀 البوت والرادار والذكاء الاصطناعي يعملون بنجاح...")
     application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == '__main__':
