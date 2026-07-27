@@ -141,7 +141,7 @@ markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     get_user_state(chat_id)
-    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب Pro**\n\nالرادار التلقائي والذكاء الاصطناعي جاهزان للعمل 24/7.", reply_markup=markup, parse_mode="Markdown")
+    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب Pro**\n\nالرادار التلقائي والذكاء الاصطناعي الاحترافي جاهزان للعمل 24/7.", reply_markup=markup, parse_mode="Markdown")
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -165,11 +165,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"ℹ️ {reason}")
 
     elif text == "📈 تحليل صورة الشارت":
-        await update.message.reply_text("📸 **أرسل صورة الشارت الآن لتحليلها بالذكاء الاصطناعي!**")
+        await update.message.reply_text("📸 **أرسل صورة الشارت الآن لتحليلها بالذكاء الاصطناعي (وفق قواعد المحترفين)!**")
 
     elif text == "⚙️ حالة البوت والرمز":
         status_icon = "🟢" if is_open else "🔴"
-        ai_status = "🟢 متصل عبر OpenRouter" if OPENROUTER_API_KEY else "🔴 غير متصل"
+        ai_status = "🟢 متصل عبر OpenRouter (محترف)" if OPENROUTER_API_KEY else "🔴 غير متصل"
         await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار:** 🟢 شغال\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
 
     elif text == "🔄 إعادة ضبط التداول":
@@ -183,7 +183,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ مفتاح OPENROUTER_API_KEY غير متصل في إعدادات Render!")
         return
     
-    await update.message.reply_text("📸 جاري تحليل الشارت بالذكاء الاصطناعي... ⏳")
+    await update.message.reply_text("📸 جاري قراءة الشارت وتطبيق قواعد التداول الصارمة للمحترفين... ⏳")
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
@@ -194,6 +194,24 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Content-Type": "application/json"
         }
         
+        # برومبت احترافي وصارم جداً لمنع الشراء من القمم أو البيع من القيعان
+        system_prompt = (
+            "أنت خبير متداول سكالبينج محترف متخصص في الذهب (XAU/USD).\n"
+            "حلل الشارت المرفق بناءً على هذه القواعد الصارمة جداً:\n"
+            "1. انظر إلى السعر الحالي مقارنة بأقرب قمة وقاع على الشارت:\n"
+            "   - يمنع منعاً باتاً التوصية بـ (شراء/BUY) إذا كان السعر عند القمة أو قريب منها جداً (أقل من 0.5 دولار).\n"
+            "   - يمنع منعاً باتاً التوصية بـ (بيع/SELL) إذا كان السعر عند القاع أو قريب منه جداً.\n"
+            "2. افحص مؤشر MACD و RSI:\n"
+            "   - إذا كانت أشرطة MACD تتناقص والسعر يصعد، اذكر وجود ضعف في الزخم (Divergence) ونصح بعدم الدخول العشوائي.\n"
+            "3. إذا كان السوق متذبذباً أو عند مناطق حسم، ضع القرار: (انتظار / WAIT) واذكر السبب.\n"
+            "4. رتب إجابتك بتنسيق واضح ومباشر:\n"
+            "   - الاتجاه العام اللحظي:\n"
+            "   - المستويات المفتاحية (الدعم والمقاومة):\n"
+            "   - حالة الزخم (MACD & RSI):\n"
+            "   - التوصية الصارمة (BUY / SELL / WAIT):\n"
+            "   - الأهداف (TP) ووقف الخسارة (SL) إن وجدت فرصة حقيقية."
+        )
+
         payload = {
             "model": "google/gemini-2.5-flash",
             "max_tokens": 1000,
@@ -201,7 +219,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "قم بتحليل الشارت المرفق واستخرج المستويات والاتجاه وتوصية سكالبينج بشكل مختصر ومباشر."},
+                        {"type": "text", "text": system_prompt},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                     ]
                 }
@@ -212,8 +230,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if "choices" in response and len(response["choices"]) > 0:
             analysis_text = response["choices"][0]["message"]["content"]
-            # إرسال التحليل كنص عادي لمنع أخطاء التنسيق في التلغرام
-            await update.message.reply_text(f"📊 نتائج التحليل الذكي:\n\n{analysis_text}")
+            await update.message.reply_text(f"📊 التحليل المحترف (نظام الصارم):\n\n{analysis_text}")
         else:
             await update.message.reply_text(f"⚠️ خطأ من المزود: {str(response)}")
 
@@ -240,7 +257,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("🚀 البوت والذكاء الاصطناعي يعملان بنجاح...")
+    print("🚀 البوت والذكاء الاصطناعي المحترف يعملان بنجاح...")
     application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == '__main__':
