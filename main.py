@@ -98,7 +98,7 @@ def fetch_gold_price():
         return None
 
 # ---------------------------------------------------------
-# 5. الرادار التلقائي (يفحص كل 15 دقيقة)
+# 5. الرادار التلقائي (يفحص ويرسل تنبيه كل 15 دقيقة)
 # ---------------------------------------------------------
 async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
     is_open, _ = is_market_open()
@@ -109,8 +109,7 @@ async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
     if current_price is None:
         return
 
-    # إرسال تحديث دوري كل 15 دقيقة يخبرك أن الرادار يراقب السوق وجاهز لاستقبال الشارت
-    msg = f"radar 📡 **تحديث رادار الذهب التلقائي (كل 15 دقيقة)**\n\nالسعر الحالي للذهب: `⚡ {current_price}`\nالبوت يراقب السيولة وجاهز لتحليل أي شارت ترسله بالبرومبت الاحترافي!"
+    msg = f"📡 **تحديث رادار الذهب التلقائي (كل 15 دقيقة)**\n\nالسعر الحالي للذهب: `{current_price}`\nالبوت يراقب حركة الأسعار وجاهز لتحليل الشارت الخاص بك ببرومبت SMC الاحترافي!"
     
     for chat_id, state in user_states.items():
         if state.get("radar_active", True):
@@ -132,7 +131,7 @@ markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     get_user_state(chat_id)
-    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب الاحترافي (SMC & Price Action)**\n\nالبوت مبرمج برومبت تداول 30 عام خبرة، وستصلك تنبيهات الرادار كل 15 دقيقة.", reply_markup=markup, parse_mode="Markdown")
+    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب الاحترافي (SMC & Price Action)**\n\nالبوت مبرمج برومبت محترفين ذو خبرة عالية، وستصلك تنبيهات الرادار كل 15 دقيقة تلقائياً.", reply_markup=markup, parse_mode="Markdown")
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -148,7 +147,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🎯 سعر الذهب اللحظي":
         price = fetch_gold_price()
         if price:
-            await update.message.reply_text(f"💰 **سعر الذهب الآن ({SYMBOL}):** `${price}`\n🟢 الرادار يعمل في الخلفية.", parse_mode="Markdown")
+            await update.message.reply_text(f"💰 **سعر الذهب الآن ({SYMBOL}):** `${price}`\n🟢 الرادار يعمل بانتظام.", parse_mode="Markdown")
         else:
             await update.message.reply_text("⚠️ متعذر جلب السعر حالياً.")
 
@@ -160,7 +159,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif text == "⚙️ حالة البوت والرمز":
         status_icon = "🟢" if is_open else "🔴"
-        ai_status = "🟢 متصل (برومبت احترافي مفعل)" if OPENROUTER_API_KEY else "🔴 غير متصل"
+        ai_status = "🟢 متصل (برومبت SMC مفعل)" if OPENROUTER_API_KEY else "🔴 غير متصل"
         await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار (كل 15 دقيقة):** 🟢 شغال\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
 
     elif text == "🔄 إعادة ضبط التداول":
@@ -174,7 +173,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ مفتاح OPENROUTER_API_KEY غير متصل في إعدادات Render!")
         return
     
-    await update.message.reply_text("🔍 جاري فحص الشارت باستخدام خوارزميات الذكاء الاصطناعي المتقدمة (SMC & Liquidity)... يرجى الانتظار ⏳")
+    await update.message.reply_text("🔍 جاري فحص الشارت باستخدام خوارزميات الذكاء الاصطناعي المتقدمة (SMC & Liquidity)... ⏳")
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
@@ -185,7 +184,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Content-Type": "application/json"
         }
         
-        # البرومبت الاحترافي القوي الذي طلبته بالكامل وبدون أي نقصان
         system_prompt = (
             "أنت محلل تداول احترافي بخبرة تزيد عن 30 عامًا في التحليل الفني، ومتخصص في الذهب (XAU/USD) والعملات الرقمية. "
             "حلّل الصورة المرفقة وكأنها لقطة مباشرة من منصة TradingView.\n\n"
@@ -216,7 +214,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         payload = {
             "model": "google/gemini-2.5-flash",
-            "max_tokens": 1500,  # مساحة كافية لتوليد تحليل طويل ومفصل
+            "max_tokens": 1500,
             "messages": [
                 {
                     "role": "user",
@@ -232,7 +230,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if "choices" in response and len(response["choices"]) > 0:
             analysis_text = response["choices"][0]["message"]["content"]
-            await update.message.reply_text(f"📊 **التقرير الاحترافي الشامل (SMC & Price Action):**\n\n{analysis_text}", parse_mode="Markdown")
+            # إرسال الرسالة كنص عادي بدون parse_mode لمنع استثناءات التنسيق في التلغرام
+            await update.message.reply_text(f"📊 التقرير الاحترافي الشامل (SMC & Price Action):\n\n{analysis_text}")
         else:
             await update.message.reply_text(f"⚠️ خطأ من المزود الذكي: {str(response)}")
 
@@ -252,7 +251,7 @@ def main():
     application = builder.build()
 
     job_queue = application.job_queue
-    # ضبط الرادار ليعمل كل 15 دقيقة (900 ثانية)
+    # تشغيل الرادار التلقائي كل 15 دقيقة (900 ثانية)
     job_queue.run_repeating(gold_radar_job, interval=900, first=10)
 
     application.add_handler(CommandHandler("start", start))
@@ -260,7 +259,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("🚀 البوت يعمل الآن بكامل طاقته (الرادار كل 15 دقيقة + برومبت 30 عام خبرة)...")
+    print("🚀 البوت يعمل الآن بكامل طاقته بدون أخطاء تنسيق...")
     application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == '__main__':
