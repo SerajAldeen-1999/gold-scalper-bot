@@ -109,7 +109,7 @@ async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
     if current_price is None:
         return
 
-    msg = f"📡 **تحديث رادار الذهب التلقائي (كل 15 دقيقة)**\n\nالسعر الحالي للذهب: `{current_price}`\nالبوت يراقب حركة الأسعار وجاهز لتحليل الشارت الخاص بك ببرومبت SMC الاحترافي!"
+    msg = f"📡 **تحديث رادار الذهب التلقائي (كل 15 دقيقة)**\n\nالسعر الحالي للذهب: `{current_price}`\nأرسل صورة الشارت للحصول على التوصية السريعة والمركزة!"
     
     for chat_id, state in user_states.items():
         if state.get("radar_active", True):
@@ -123,7 +123,7 @@ async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
 # ---------------------------------------------------------
 main_keyboard = [
     ["🎯 سعر الذهب اللحظي", "📊 كيف وضع السوق؟"],
-    ["📈 تحليل صورة الشارت (SMC)", "⚙️ حالة البوت والرمز"],
+    ["📈 تحليل صورة الشارت (توصية سريعة)", "⚙️ حالة البوت والرمز"],
     ["🔄 إعادة ضبط التداول"]
 ]
 markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
@@ -131,7 +131,7 @@ markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     get_user_state(chat_id)
-    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب الاحترافي (SMC & Price Action)**\n\nالبوت مبرمج برومبت محترفين ذو خبرة عالية، وستصلك تنبيهات الرادار كل 15 دقيقة تلقائياً.", reply_markup=markup, parse_mode="Markdown")
+    await update.message.reply_text("👑 **أهلاً بك في نظام توصيات سكالبينج الذهب السريع**\n\nأرسل صورة الشارت مباشرة لتصلك التوصية الدقيقة في أسطر معدودة.", reply_markup=markup, parse_mode="Markdown")
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -154,13 +154,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "📊 كيف وضع السوق؟":
         await update.message.reply_text(f"ℹ️ {reason}")
 
-    elif text == "📈 تحليل صورة الشارت (SMC)":
-        await update.message.reply_text("📸 **أرسل صورة الشارت الآن لتطبيق التحليل الفني العميق (SMC، السيولة، الأهداف، ووقف الخسارة)...**")
+    elif text == "📈 تحليل صورة الشارت (توصية سريعة)":
+        await update.message.reply_text("📸 **أرسل صورة الشارت الآن لاستخراج التوصية والأهداف مباشرة...**")
 
     elif text == "⚙️ حالة البوت والرمز":
         status_icon = "🟢" if is_open else "🔴"
-        ai_status = "🟢 متصل (برومبت SMC مفعل)" if OPENROUTER_API_KEY else "🔴 غير متصل"
-        await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار (كل 15 دقيقة):** 🟢 شغال\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
+        ai_status = "🟢 متصل (نظام التوصيات السريعة)" if OPENROUTER_API_KEY else "🔴 غير متصل"
+        await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار:** 🟢 شغال\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
 
     elif text == "🔄 إعادة ضبط التداول":
         await reset_command(update, context)
@@ -173,7 +173,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ مفتاح OPENROUTER_API_KEY غير متصل في إعدادات Render!")
         return
     
-    await update.message.reply_text("🔍 جاري فحص الشارت باستخدام خوارزميات الذكاء الاصطناعي المتقدمة (SMC & Liquidity)... ⏳")
+    await update.message.reply_text("⚡️ جاري استخراج التوصية السريعة والمركزة... ⏳")
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
@@ -184,37 +184,25 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Content-Type": "application/json"
         }
         
+        # برومبت صارم جداً للتركيز والاختصار في 5 أسطر فقط
         system_prompt = (
-            "أنت محلل تداول احترافي بخبرة تزيد عن 30 عامًا في التحليل الفني، ومتخصص في الذهب (XAU/USD) والعملات الرقمية. "
-            "حلّل الصورة المرفقة وكأنها لقطة مباشرة من منصة TradingView.\n\n"
-            "أريد تحليلاً احترافيًا يتضمن:\n"
-            "1. تحديد الاتجاه العام (صاعد - هابط - عرضي).\n"
-            "2. تحليل هيكل السوق (Market Structure): HH, HL, LH, LL.\n"
-            "3. تحديد مناطق الدعم والمقاومة القوية.\n"
-            "4. تحديد مناطق العرض والطلب (Supply & Demand).\n"
-            "5. رسم خطوط الترند المهمة.\n"
-            "6. تحليل السيولة (Liquidity) وأماكن تجميع أو اصطياد وقف الخسارة.\n"
-            "7. تحليل Smart Money Concepts (SMC) إن وجدت: BOS, CHOCH, Order Blocks, Fair Value Gap (FVG), Breaker Block.\n"
-            "8. استخدام مؤشرات مثل RSI وMACD وVolume إذا كانت ظاهرة في الصورة.\n"
-            "9. تحديد ما إذا كانت هناك شموع انعكاسية أو نماذج سعرية.\n"
-            "10. تحديد أفضل سيناريو للتداول فقط إذا توفرت جميع شروط الدخول.\n\n"
-            "وفي النهاية أعطني النتيجة بهذا الشكل الدقيق:\n"
-            "- نوع الصفقة: شراء / بيع / لا توجد صفقة.\n"
-            "- سبب الدخول.\n"
-            "- سعر الدخول المقترح.\n"
-            "- وقف الخسارة (Stop Loss).\n"
-            "- الهدف الأول.\n"
-            "- الهدف الثاني.\n"
-            "- الهدف الثالث.\n"
-            "- نسبة المخاطرة إلى العائد (Risk/Reward).\n"
-            "- نسبة الثقة في التحليل من 0 إلى 100 مع توضيح سبب هذه النسبة.\n"
-            "- إذا كانت الصورة غير كافية لاتخاذ قرار، اكتب بوضوح: 'لا توجد صفقة بسبب نقص المعطيات'، ولا تخمّن.\n"
-            "- لا تعطِ أي توصية إلا إذا كانت الإشارة قوية ومدعومة بعدة عوامل فنية متوافقة."
+            "أنت خبير تداول سكالبينج محترف في الذهب (XAU/USD).\n"
+            "حلل الشارت المرفق وأعطني الخلاصة المباشرة والتوصية فوراً في فقرة قصيرة ومحددة جداً (لا تتجاوز 5 أو 6 أسطر إطلاقاً).\n"
+            "ممنوع التحليلات الطويلة أو التفاصيل النظرية.\n\n"
+            "التزم بالتنسيق التالي بالحرف:\n"
+            "🎯 توصية سكالبينج سريعة (XAU/USD):\n"
+            "• سعر الذهب الحالي: [اكتب السعر الظاهر على الشارت]\n"
+            "• التوصية: [شراء BUY / بيع SELL / انتظار WAIT]\n"
+            "• سعر الدخول المقترح: [سعر الدخول]\n"
+            "• أهداف الأرباح (TP): TP1: [سعر] | TP2: [سعر]\n"
+            "• وقف الخسارة (SL): [سعر]\n"
+            "• المخاطرة للعائد (R:R): [مثلاً 1:1.5]\n"
+            "💡 شرط التنفيذ / نصيحة ذكية: [سطر واحد فقط يوضح سبب القرار أو شرط الدخول]"
         )
 
         payload = {
             "model": "google/gemini-2.5-flash",
-            "max_tokens": 1500,
+            "max_tokens": 500,  # تقليل التوكنز لضمان الإجابة المختصرة والسريعة
             "messages": [
                 {
                     "role": "user",
@@ -226,12 +214,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         }
         
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=45).json()
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=30).json()
         
         if "choices" in response and len(response["choices"]) > 0:
             analysis_text = response["choices"][0]["message"]["content"]
-            # إرسال الرسالة كنص عادي بدون parse_mode لمنع استثناءات التنسيق في التلغرام
-            await update.message.reply_text(f"📊 التقرير الاحترافي الشامل (SMC & Price Action):\n\n{analysis_text}")
+            await update.message.reply_text(f"{analysis_text}")
         else:
             await update.message.reply_text(f"⚠️ خطأ من المزود الذكي: {str(response)}")
 
@@ -251,7 +238,6 @@ def main():
     application = builder.build()
 
     job_queue = application.job_queue
-    # تشغيل الرادار التلقائي كل 15 دقيقة (900 ثانية)
     job_queue.run_repeating(gold_radar_job, interval=900, first=10)
 
     application.add_handler(CommandHandler("start", start))
@@ -259,7 +245,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("🚀 البوت يعمل الآن بكامل طاقته بدون أخطاء تنسيق...")
+    print("🚀 البوت يعمل الآن بنظام التوصيات السريعة والمركزة...")
     application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == '__main__':
