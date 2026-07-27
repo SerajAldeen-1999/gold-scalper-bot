@@ -1,6 +1,7 @@
 import os
 import io
 import time
+import base64
 import logging
 import requests
 from datetime import datetime
@@ -9,7 +10,6 @@ from threading import Thread
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from PIL import Image
 
 # ---------------------------------------------------------
 # إعداد السجلات (Logs)
@@ -17,7 +17,7 @@ from PIL import Image
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ---------------------------------------------------------
-# 1. خادم Flask وإبقاء الخدمة مستيقظة (Render Health Check)
+# 1. خادم Flask وإبقاء الخدمة مستيقظة
 # ---------------------------------------------------------
 app_web = Flask('')
 
@@ -46,23 +46,14 @@ def self_ping():
         time.sleep(600)
 
 # ---------------------------------------------------------
-# 2. الإعدادات والمتغيرات (سحب آمن من البيئة)
+# 2. الإعدادات والمتغيرات
 # ---------------------------------------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
 TWELVE_DATA_API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "").strip()
 
 SYMBOL = "XAU/USD"
 user_states = {}
-
-ai_client = None
-if GEMINI_API_KEY:
-    try:
-        from google import genai
-        ai_client = genai.Client(api_key=GEMINI_API_KEY)
-        logging.info("Gemini AI Client Ready.")
-    except Exception as e:
-        logging.error(f"Gemini Init Error: {e}")
 
 def get_user_state(chat_id: int) -> dict:
     if chat_id not in user_states:
@@ -108,7 +99,7 @@ def fetch_gold_price():
         return None
 
 # ---------------------------------------------------------
-# 5. الرادار التلقائي في الكواليس (Job Queue)
+# 5. الرادار التلقائي
 # ---------------------------------------------------------
 last_processed_price = None
 
@@ -150,7 +141,7 @@ markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     get_user_state(chat_id)
-    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب Pro**\n\nالرادار التلقائي والذكاء الاصطناعي جاهزان تماماً للعمل 24/7.", reply_markup=markup, parse_mode="Markdown")
+    await update.message.reply_text("👑 **أهلاً بك في نظام سكالبينج الذهب Pro**\n\nالرادار التلقائي والذكاء الاصطناعي جاهزان للعمل.", reply_markup=markup, parse_mode="Markdown")
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -161,7 +152,6 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     chat_id = update.effective_chat.id
-    state = get_user_state(chat_id)
     is_open, reason = is_market_open()
 
     if text == "🎯 سعر الذهب اللحظي":
@@ -169,7 +159,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if price:
             await update.message.reply_text(f"💰 **سعر الذهب الآن ({SYMBOL}):** `${price}`\n🟢 الرادار يفحص الحركة تلقائياً.", parse_mode="Markdown")
         else:
-            await update.message.reply_text("⚠️ متعذر جلب السعر حالياً، تأكد من إعدادات المفتاح.")
+            await update.message.reply_text("⚠️ متعذر جلب السعر حالياً.")
 
     elif text == "📊 كيف وضع السوق؟":
         await update.message.reply_text(f"ℹ️ {reason}")
@@ -179,8 +169,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif text == "⚙️ حالة البوت والرمز":
         status_icon = "🟢" if is_open else "🔴"
-        ai_status = "🟢 متصل وجاهز" if ai_client else "🔴 غير متصل"
-        await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار:** 🟢 شغال كل 60 ثانية\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
+        ai_status = "🟢 متصل عبر OpenRouter" if OPENROUTER_API_KEY else "🔴 غير متصل"
+        await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار:** 🟢 شغال\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
 
     elif text == "🔄 إعادة ضبط التداول":
         await reset_command(update, context)
@@ -189,17 +179,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار المتاحة.", reply_markup=markup)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not ai_client:
-        await update.message.reply_text("⚠️ **مفتاح GEMINI_API_KEY غير متصل في إعدادات Render!**")
+    if not OPENROUTER_API_KEY:
+        await update.message.reply_text("⚠️ **مفتاح OPENROUTER_API_KEY غير متصل في إعدادات Render!**")
         return
-    await update.message.reply_text("📸 **جاري تحليل الشارت بالذكاء الاصطناعي... ⏳**")
+    
+    await update.message.reply_text("📸 **جاري تحليل الشارت بالذكاء الاصطناعي عبر OpenRouter... ⏳**")
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
-        image = Image.open(io.BytesIO(photo_bytes))
-        prompt = "قم بتحليل الشارت المرفق استناداً إلى حركة السعر والدعم والمقاومة، وأعطني توقعاً لصفقة سكالبينج."
-        response = ai_client.models.generate_content(model='gemini-2.5-flash', contents=[prompt, image])
-        await update.message.reply_text(f"📊 **نتائج التحليل الذكي:**\n\n{response.text}", parse_mode="Markdown")
+        base64_image = base64.b64encode(photo_bytes).decode('utf-8')
+
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "json"
+        }
+        
+        payload = {
+            "model": "google/gemini-2.5-flash",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "قم بتحليل الشارت المرفق واستخرج المستويات والاتجاه وتوصية سكالبينج."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                    ]
+                }
+            ]
+        }
+        
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=30).json()
+        
+        if "choices" in response and len(response["choices"]) > 0:
+            analysis_text = response["choices"][0]["message"]["content"]
+            await update.message.reply_text(f"📊 **نتائج التحليل الذكي:**\n\n{analysis_text}", parse_mode="Markdown")
+        else:
+            await update.message.reply_text(f"⚠️ **خطأ من المزود:** `{str(response)}`", parse_mode="Markdown")
+
     except Exception as e:
         await update.message.reply_text(f"⚠️ **حدث خطأ أثناء التحليل:** `{str(e)}`", parse_mode="Markdown")
 
@@ -223,7 +238,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("🚀 البوت والرادار والذكاء الاصطناعي يعملون بنجاح...")
+    print("🚀 البوت والذكاء الاصطناعي يعملان بنجاح...")
     application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == '__main__':
