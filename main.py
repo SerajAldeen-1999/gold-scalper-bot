@@ -78,7 +78,7 @@ def is_market_open() -> tuple[bool, str]:
     if weekday == 6 and hour < 18:
         return False, "السوق مغلق حالياً (يفتح الأحد 6:00 م بتوقيت نيويورك)."
     if weekday in [0, 1, 2, 3] and hour == 17:
-        return False, "السوق مغلق لفترة التسوية اليومية."
+        return False, "السوق مغلق حالياً لفترة التسوية اليومية (Daily Rollover)."
 
     return True, "السوق مفتوح ومتاح للتداول."
 
@@ -171,9 +171,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار المتاحة.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 7. معالجة الصور ومحرك التحليل المتخصص بـ M5
+# 7. معالجة الصور وفحص الإغلاق + التحليل الذكي M5
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 1. فحص هل السوق مفتوح أم مغلق فور تلقي الصورة
+    is_open, reason = is_market_open()
+    if not is_open:
+        await update.message.reply_text(
+            f"🚫 **لا يمكن تحليل الشارت حالياً!**\n\n"
+            f"ℹ️ **السبب:** {reason}\n"
+            f"💡 يرجى الانتظار حتى إعادة فتح السوق لتفادي السبريد العالي والتحليلات الخاطئة.",
+            parse_mode="Markdown"
+        )
+        return
+
     if not OPENROUTER_API_KEY:
         await update.message.reply_text("⚠️ مفتاح OPENROUTER_API_KEY غير متصل في إعدادات Render!")
         return
@@ -226,70 +237,4 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if "choices" in response and len(response["choices"]) > 0:
             content = response["choices"][0]["message"]["content"].strip()
-            clean_json = content.replace("```json", "").replace("```", "").strip()
-            data = json.loads(clean_json)
-
-            action = data.get("action", "WAIT")
-            entry = data.get("entry", 0.0)
-            tp1 = data.get("tp1", 0.0)
-            sl_raw = data.get("sl", 0.0)
-            rr = data.get("rr", "1:1.5")
-            note = data.get("note", "")
-
-            if action in ["BUY", "SELL"]:
-                # إضافة هامش الأمان (SL Buffer)
-                if action == "BUY":
-                    adjusted_sl = round(sl_raw - SL_BUFFER_PRICE, 2)
-                else:
-                    adjusted_sl = round(sl_raw + SL_BUFFER_PRICE, 2)
-
-                text_msg = (
-                    f"🎯 **توصية سكالبينج M5 (XAU/USD):**\n\n"
-                    f"• الاتجاه: **{action}**\n"
-                    f"• سعر الدخول المقترح: `{entry}`\n"
-                    f"• هدف الأرباح (TP1): `{tp1}`\n"
-                    f"• الستوب الأساسي: `{sl_raw}`\n"
-                    f"🛡️ **وقف الخسارة المعدل (مع هامش الأمان):** `{adjusted_sl}`\n"
-                    f"• المخاطرة للعائد (R:R): `{rr}`\n\n"
-                    f"💡 **سبب الدخول / الملاحظة:** {note}"
-                )
-            else:
-                text_msg = (
-                    f"🎯 **توصية سكالبينج M5 (XAU/USD):**\n\n"
-                    f"• التوصية: **انتظار (WAIT)**\n"
-                    f"💡 **السبب:** {note}"
-                )
-
-            await update.message.reply_text(text_msg, parse_mode="Markdown")
-
-        else:
-            await update.message.reply_text(f"⚠️ خطأ من المزود الذكي: {str(response)}")
-
-    except Exception as e:
-        await update.message.reply_text(f"⚠️ حدث خطأ أثناء معالجة الصورة: {str(e)}")
-
-# ---------------------------------------------------------
-# 8. التشغيل الرئيسي
-# ---------------------------------------------------------
-def main():
-    keep_alive()
-    t_ping = Thread(target=self_ping)
-    t_ping.daemon = True
-    t_ping.start()
-
-    builder = Application.builder().token(BOT_TOKEN)
-    application = builder.build()
-
-    job_queue = application.job_queue
-    job_queue.run_repeating(gold_radar_job, interval=900, first=10)
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("reset", reset_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-
-    print("🚀 البوت يعمل الآن بنظام M5 والستوب الآمن...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
-
-if __name__ == '__main__':
-    main()
+            clean_json = content.replace("```json", "").replace("
