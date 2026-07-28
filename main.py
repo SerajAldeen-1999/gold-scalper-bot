@@ -100,7 +100,22 @@ def fetch_gold_price():
         return None
 
 # ---------------------------------------------------------
-# 5. الرادار التلقائي (كل 15 دقيقة)
+# 5. جلب صورة شارت حية تلقائياً (M5 Chart Image)
+# ---------------------------------------------------------
+def fetch_live_chart_image():
+    try:
+        # رابط جلب شارت حركي مبسط للذهب لفريم 5 دقائق M5
+        chart_url = "https://chart-img.com/v1/tradingview/advanced-chart?symbol=OANDA:XAUUSD&interval=5m&theme=dark&width=800&height=600"
+        response = requests.get(chart_url, timeout=15)
+        if response.status_code == 200:
+            return response.content
+        return None
+    except Exception as e:
+        logging.error(f"Error fetching live chart image: {e}")
+        return None
+
+# ---------------------------------------------------------
+# 6. الرادار التلقائي (كل 15 دقيقة)
 # ---------------------------------------------------------
 async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
     is_open, _ = is_market_open()
@@ -111,7 +126,7 @@ async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
     if current_price is None:
         return
 
-    msg = f"📡 **تحديث رادار الذهب التلقائي (كل 15 دقيقة)**\n\nالسعر الحالي للذهب: `{current_price}`\nأرسل صورة شارت **فريم 5 دقائق (M5)** للحصول على توصية دقيقة!"
+    msg = f"📡 **تحديث رادار الذهب التلقائي (كل 15 دقيقة)**\n\nالسعر الحالي للذهب: `{current_price}`\nاضغط على '⚡️ توصية لحظية تلقائية' أو أرسل صورة الشارت!"
     
     for chat_id, state in user_states.items():
         if state.get("radar_active", True):
@@ -121,19 +136,19 @@ async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
                 logging.error(f"Failed to send radar alert to {chat_id}: {e}")
 
 # ---------------------------------------------------------
-# 6. الواجهة والأوامر
+# 7. الواجهة والأوامر
 # ---------------------------------------------------------
 main_keyboard = [
-    ["🎯 سعر الذهب اللحظي", "📊 كيف وضع السوق؟"],
-    ["📈 تحليل صورة الشارت (توصية M5)", "⚙️ حالة البوت والرمز"],
-    ["🔄 إعادة ضبط التداول"]
+    ["⚡️ توصية لحظية تلقائية", "🎯 سعر الذهب اللحظي"],
+    ["📈 تحليل صورة الشارت (توصية M5)", "📊 كيف وضع السوق؟"],
+    ["⚙️ حالة البوت والرمز", "🔄 إعادة ضبط التداول"]
 ]
 markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     get_user_state(chat_id)
-    await update.message.reply_text("👑 **أهلاً بك في نظام توصيات سكالبينج الذهب (فريم M5)**\n\nيرجى فتح شارت **5 دقائق (M5)** وإرسال الصورة للحصول على تحليل قوي ودقيق.", reply_markup=markup, parse_mode="Markdown")
+    await update.message.reply_text("👑 **أهلاً بك في نظام توصيات سكالبينج الذهب (فريم M5)**\n\nيمكنك طلب **توصية لحظية تلقائية** بضغطة زر، أو إرسال صورة الشارت بنفسك.", reply_markup=markup, parse_mode="Markdown")
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -141,58 +156,11 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["in_trade"] = False
     await update.message.reply_text("🔄 **تم إعادة ضبط التداول بنجاح!**", reply_markup=markup, parse_mode="Markdown")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    chat_id = update.effective_chat.id
-    is_open, reason = is_market_open()
-
-    if text == "🎯 سعر الذهب اللحظي":
-        price = fetch_gold_price()
-        if price:
-            await update.message.reply_text(f"💰 **سعر الذهب الآن ({SYMBOL}):** `${price}`\n🟢 الرادار يعمل بانتظام.", parse_mode="Markdown")
-        else:
-            await update.message.reply_text("⚠️ متعذر جلب السعر حالياً.")
-
-    elif text == "📊 كيف وضع السوق؟":
-        await update.message.reply_text(f"ℹ️ {reason}")
-
-    elif text == "📈 تحليل صورة الشارت (توصية M5)":
-        await update.message.reply_text("📸 **أرسل صورة شارت فريم 5 دقائق (M5) الآن...**")
-
-    elif text == "⚙️ حالة البوت والرمز":
-        status_icon = "🟢" if is_open else "🔴"
-        ai_status = "🟢 متصل (نظام M5 السريع)" if OPENROUTER_API_KEY else "🔴 غير متصل"
-        await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار:** 🟢 شغال\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
-
-    elif text == "🔄 إعادة ضبط التداول":
-        await reset_command(update, context)
-
-    else:
-        await update.message.reply_text("يرجى استخدام الأزرار المتاحة.", reply_markup=markup)
-
 # ---------------------------------------------------------
-# 7. معالجة الصور وفحص الإغلاق + التحليل الذكي M5
+# 8. محرك التحليل الموحد للصورة (سواء مرفوعة أو مجلوبة تلقائياً)
 # ---------------------------------------------------------
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # 1. فحص هل السوق مفتوح أم مغلق فور تلقي الصورة
-    is_open, reason = is_market_open()
-    if not is_open:
-        await update.message.reply_text(
-            f"🚫 **لا يمكن تحليل الشارت حالياً!**\n\n"
-            f"ℹ️ **السبب:** {reason}\n"
-            f"💡 يرجى الانتظار حتى إعادة فتح السوق لتفادي السبريد العالي والتحليلات الخاطئة.",
-            parse_mode="Markdown"
-        )
-        return
-
-    if not OPENROUTER_API_KEY:
-        await update.message.reply_text("⚠️ مفتاح OPENROUTER_API_KEY غير متصل في إعدادات Render!")
-        return
-    
-    await update.message.reply_text("⚡️ جاري تحليل شارت الـ 5 دقائق واستخراج التوصية... ⏳")
+async def process_and_analyze_image(update: Update, photo_bytes: bytes):
     try:
-        photo_file = await update.message.photo[-1].get_file()
-        photo_bytes = await photo_file.download_as_bytearray()
         base64_image = base64.b64encode(photo_bytes).decode('utf-8')
 
         headers = {
@@ -200,14 +168,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Content-Type": "application/json"
         }
         
-        # برومبت متخصص ومحافظ جداً لفريم 5 دقائق
         system_prompt = (
             "أنت خبير ومدير مخاطر محترف في تداول الذهب (XAU/USD) على فريم 5 دقائق (M5).\n"
             "حلل الشارت المرفق بحذر شديد باتباع القواعد التالية:\n"
             "1. حدد الاتجاه العام على الشارت (إذا كانت الشموع والمتوسط المتحرك صاعدين، ممنوع إعطاء إشارة SELL إطلاقاً والعكس صحيح).\n"
-            "2. تأكد من إشارة الـ MACD بدقة (هل هو فوق الصفر وفي اتجاه صاعد أم تحت الصفر وفي اتجاه هابط).\n"
+            "2. تأكد من إشارة الاتجاه والشموع بدقة.\n"
             "3. ضع وقف خسارة (SL) منطقي بناءً على آخر قاع أو قمة على M5.\n"
-            "4. إذا كان السعر في منطقة تذبذب عرضي أو الإشارات متعارضة، التوصية المباشرة هي 'WAIT'.\n\n"
+            "4. إذا كان السعر في منطقة تذبذب عرضي أو الإشارات غير واضحة، التوصية المباشرة هي 'WAIT'.\n\n"
             "أخرج الرد بتنسيق JSON حصراً بدون أي نصوص إضافية:\n"
             "{\n"
             '  "action": "BUY" أو "SELL" أو "WAIT",\n'
@@ -237,4 +204,137 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if "choices" in response and len(response["choices"]) > 0:
             content = response["choices"][0]["message"]["content"].strip()
-            clean_json = content.replace("```json", "").replace("
+            clean_json = content.replace("```json", "").replace("```", "").strip()
+            data = json.loads(clean_json)
+
+            action = data.get("action", "WAIT")
+            entry = data.get("entry", 0.0)
+            tp1 = data.get("tp1", 0.0)
+            sl_raw = data.get("sl", 0.0)
+            rr = data.get("rr", "1:1.5")
+            note = data.get("note", "")
+
+            if action in ["BUY", "SELL"]:
+                if action == "BUY":
+                    adjusted_sl = round(sl_raw - SL_BUFFER_PRICE, 2)
+                else:
+                    adjusted_sl = round(sl_raw + SL_BUFFER_PRICE, 2)
+
+                text_msg = (
+                    f"🎯 **توصية سكالبينج M5 (XAU/USD):**\n\n"
+                    f"• الاتجاه: **{action}**\n"
+                    f"• سعر الدخول المقترح: `{entry}`\n"
+                    f"• هدف الأرباح (TP1): `{tp1}`\n"
+                    f"• الستوب الأساسي: `{sl_raw}`\n"
+                    f"🛡️ **وقف الخسارة المعدل (مع هامش الأمان +1.5$):** `{adjusted_sl}`\n"
+                    f"• المخاطرة للعائد (R:R): `{rr}`\n\n"
+                    f"💡 **سبب الدخول / الملاحظة:** {note}"
+                )
+            else:
+                text_msg = (
+                    f"🎯 **توصية سكالبينج M5 (XAU/USD):**\n\n"
+                    f"• التوصية: **انتظار (WAIT)**\n"
+                    f"💡 **السبب:** {note}"
+                )
+
+            await update.message.reply_text(text_msg, parse_mode="Markdown")
+
+        else:
+            await update.message.reply_text(f"⚠️ خطأ من المزود الذكي: {str(response)}")
+
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ حدث خطأ أثناء معالجة التحليل: {str(e)}")
+
+# ---------------------------------------------------------
+# 9. معالجة الرسائل والأزرار
+# ---------------------------------------------------------
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    chat_id = update.effective_chat.id
+    is_open, reason = is_market_open()
+
+    if text == "⚡️ توصية لحظية تلقائية":
+        if not is_open:
+            await update.message.reply_text(f"🚫 **السوق مغلق حالياً!**\nℹ️ {reason}")
+            return
+
+        await update.message.reply_text("📸 **جاري جلب شارت الذهب المباشر (M5) وتحليله تلقائياً... ⏳**")
+        chart_bytes = fetch_live_chart_image()
+        
+        if chart_bytes:
+            # إرسال صورة الشارت المجلوبة للمستخدم للمعاينة ثم تحليلها
+            await update.message.reply_photo(photo=chart_bytes, caption="🌐 **شارت M5 المباشر المجلوب تلقائياً**")
+            await process_and_analyze_image(update, chart_bytes)
+        else:
+            await update.message.reply_text("⚠️ متعذر جلب صورة الشارت اللحظية حالياً. يرجى التقاط صورة الشارت بنفسك وإرسالها.")
+
+    elif text == "🎯 سعر الذهب اللحظي":
+        price = fetch_gold_price()
+        if price:
+            await update.message.reply_text(f"💰 **سعر الذهب الآن ({SYMBOL}):** `${price}`\n🟢 الرادار يعمل بانتظام.", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("⚠️ متعذر جلب السعر حالياً.")
+
+    elif text == "📊 كيف وضع السوق؟":
+        await update.message.reply_text(f"ℹ️ {reason}")
+
+    elif text == "📈 تحليل صورة الشارت (توصية M5)":
+        await update.message.reply_text("📸 **أرسل صورة شارت فريم 5 دقائق (M5) الآن...**")
+
+    elif text == "⚙️ حالة البوت والرمز":
+        status_icon = "🟢" if is_open else "🔴"
+        ai_status = "🟢 متصل (نظام M5 التلقائي)" if OPENROUTER_API_KEY else "🔴 غير متصل"
+        await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار:** 🟢 شغال\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
+
+    elif text == "🔄 إعادة ضبط التداول":
+        await reset_command(update, context)
+
+    else:
+        await update.message.reply_text("يرجى استخدام الأزرار المتاحة.", reply_markup=markup)
+
+# ---------------------------------------------------------
+# 10. معالجة الصور المرفوعة يدوياً
+# ---------------------------------------------------------
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    is_open, reason = is_market_open()
+    if not is_open:
+        await update.message.reply_text(f"🚫 **لا يمكن تحليل الشارت حالياً!**\nℹ️ **السبب:** {reason}")
+        return
+
+    if not OPENROUTER_API_KEY:
+        await update.message.reply_text("⚠️ مفتاح OPENROUTER_API_KEY غير متصل!")
+        return
+    
+    await update.message.reply_text("⚡️ جاري تحليل شارت الـ 5 دقائق واستخراج التوصية... ⏳")
+    try:
+        photo_file = await update.message.photo[-1].get_file()
+        photo_bytes = await photo_file.download_as_bytearray()
+        await process_and_analyze_image(update, photo_bytes)
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ حدث خطأ أثناء تنزيل الصورة: {str(e)}")
+
+# ---------------------------------------------------------
+# 11. التشغيل الرئيسي
+# ---------------------------------------------------------
+def main():
+    keep_alive()
+    t_ping = Thread(target=self_ping)
+    t_ping.daemon = True
+    t_ping.start()
+
+    builder = Application.builder().token(BOT_TOKEN)
+    application = builder.build()
+
+    job_queue = application.job_queue
+    job_queue.run_repeating(gold_radar_job, interval=900, first=10)
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("reset", reset_command))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
+    print("🚀 البوت يعمل الآن بنظام التوصية اللحظية التلقائية وفريم M5...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
+
+if __name__ == '__main__':
+    main()
