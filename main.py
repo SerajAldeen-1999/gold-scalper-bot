@@ -62,7 +62,6 @@ def get_user_state(chat_id: int) -> dict:
         user_states[chat_id] = {
             "in_trade": False,
             "current_trade": None,
-            "radar_active": True,
             "selected_timeframe": "M5",
             "exec_mode": "MARKET"
         }
@@ -105,7 +104,7 @@ def fetch_gold_price():
         return None
 
 # ---------------------------------------------------------
-# 5. جلب صورة شارت حية تلقائياً
+# 5. جلب صورة شارت حية تلقائياً للأوامر المعلقة
 # ---------------------------------------------------------
 def fetch_live_chart_image(interval="5m"):
     try:
@@ -119,13 +118,14 @@ def fetch_live_chart_image(interval="5m"):
         return None
 
 # ---------------------------------------------------------
-# 6. لوحة الأزرار الرئيسية المحدثة بالكامل
+# 6. لوحة الأزرار الرئيسية المحدثة (تحليل M5 بدلاً من توصية فورية)
 # ---------------------------------------------------------
 main_keyboard = [
-    ["⚡️ توصية فورية (Market - M5)", "⏳ أمر معلق (Limit - M5)"],
-    ["⏱️ تحليل شارت M1 (دقيقة)", "📈 تحليل شارت M15 (15 دقيقة)", "📊 تحليل شارت H1 (ساعة)"],
-    ["🚨 متابعة وتحديث الصفقة الحالية", "🎯 مستويات الدعم والمقاومة"],
-    ["🔍 فحص وحالة البوت (Diagnostic)", "🔄 إعادة ضبط التداول"]
+    ["⏱️ تحليل شارت M1 (دقيقة)", "📈 تحليل شارت M5 (5 دقائق)"],
+    ["📊 تحليل شارت M15 (15 دقيقة)", "🏛️ تحليل شارت H1 (ساعة)"],
+    ["⏳ أمر معلق (Limit - M5)", "🚨 متابعة وتحديث الصفقة الحالية"],
+    ["🎯 مستويات الدعم والمقاومة", "🔍 فحص وحالة البوت (Diagnostic)"],
+    ["🔄 إعادة ضبط التداول"]
 ]
 markup = ReplyKeyboardMarkup(main_keyboard, resize_keyboard=True)
 
@@ -134,14 +134,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     get_user_state(chat_id)
     await update.message.reply_text(
         "👑 **أهلاً بك في نظام مدير وتتبع صفقات الذهب الحية (Live Trade Manager)**\n\n"
-        "• **توصيات تلقائية وتحليل لكافة الفريمات (M1, M5, M15, H1).**\n"
-        "• **نظام التفاعل الحي:** يسألك البوت بعد كل توصية هل دخلت الصفقة لتبدأ المتابعة.\n"
+        "• **تحليل الشارت المرفوع لكافة الفريمات (M1, M5, M15, H1).**\n"
+        "• **نظام التفاعل الحي:** يسألك البوت بعد كل تحليل أو توصية هل دخلت الصفقة لتبدأ المتابعة.\n"
         "• **تنبيهات جني الأرباح والتأمين والخروج المبكر.**",
         reply_markup=markup, parse_mode="Markdown"
     )
 
 # ---------------------------------------------------------
-# 7. محرك التحليل والذكاء الاصطناعي مخصص بالكامل
+# 7. محرك التحليل والذكاء الاصطناعي
 # ---------------------------------------------------------
 async def process_and_analyze_image(update: Update, photo_bytes: bytes, execution_type: str = "MARKET", timeframe: str = "M5"):
     try:
@@ -298,16 +298,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = get_user_state(chat_id)
     is_open, reason = is_market_open()
 
-    if "توصية فورية" in text:
-        if not is_open:
-            await update.message.reply_text(f"🚫 **السوق مغلق حالياً!**\nℹ️ {reason}")
-            return
-        state["exec_mode"] = "MARKET"
+    if "شارت M1" in text:
+        state["selected_timeframe"] = "M1"
+        await update.message.reply_text("📸 **أرسل صورة شارت فريم الدقيقة (M1) لنقوم بتحليلها فوراً...**")
+
+    elif "شارت M5" in text:
         state["selected_timeframe"] = "M5"
-        await update.message.reply_text("⚡️ **جاري استخراج توصية فورية (M5)... ⏳**")
-        chart_bytes = fetch_live_chart_image(interval="5m")
-        if chart_bytes:
-            await process_and_analyze_image(update, chart_bytes, execution_type="MARKET", timeframe="M5")
+        await update.message.reply_text("📸 **أرسل صورة شارت فريم الـ 5 دقائق (M5) لنقوم بتحليلها فوراً...**")
+
+    elif "شارت M15" in text:
+        state["selected_timeframe"] = "M15"
+        await update.message.reply_text("📸 **أرسل صورة شارت فريم الـ 15 دقيقة (M15) لنقوم بتحليلها فوراً...**")
+
+    elif "شارت H1" in text:
+        state["selected_timeframe"] = "H1"
+        await update.message.reply_text("📸 **أرسل صورة شارت فريم الساعة (H1) لنقوم بتحليل الاتجاه العام والمستويات...**")
 
     elif "أمر معلق" in text:
         if not is_open:
@@ -320,21 +325,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if chart_bytes:
             await process_and_analyze_image(update, chart_bytes, execution_type="LIMIT", timeframe="M5")
 
-    elif "شارت M1" in text:
-        state["selected_timeframe"] = "M1"
-        await update.message.reply_text("📸 **أرسل صورة شارت فريم الدقيقة (M1) لنقوم بتحليلها فوراً...**")
-
-    elif "شارت M15" in text:
-        state["selected_timeframe"] = "M15"
-        await update.message.reply_text("📸 **أرسل صورة شارت فريم الـ 15 دقيقة (M15) لنقوم بتحليلها فوراً...**")
-
-    elif "شارت H1" in text:
-        state["selected_timeframe"] = "H1"
-        await update.message.reply_text("📸 **أرسل صورة شارت فريم الساعة (H1) لنقوم بتحليل الاتجاه العام والمستويات...**")
-
     elif text == "🚨 متابعة وتحديث الصفقة الحالية":
         if not state.get("in_trade") or not state.get("current_trade"):
-            await update.message.reply_text("ℹ️ **أنت لست داخل صفقة حالياً.** اطلب توصية أولاً واضغط '✅ دخلت الصفقة' لتفعيل المتابعة.")
+            await update.message.reply_text("ℹ️ **أنت لست داخل صفقة حالياً.** اطلب تحليل/توصية أولاً واضغط '✅ دخلت الصفقة' لتفعيل المتابعة.")
             return
 
         trade = state["current_trade"]
@@ -343,7 +336,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ متعذر جلب السعر المباشر الآن.")
             return
 
-        # حساب حالة الصفقة
         entry = trade["entry"]
         action = trade["action"]
         tp1 = trade["tp1"]
