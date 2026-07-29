@@ -125,7 +125,7 @@ async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
     if current_price is None:
         return
 
-    msg = f"📡 **تحديث رادار الذهب التلقائي (كل 15 دقيقة)**\n\nالسعر الحالي للذهب: `{current_price}`\nاختر من الأدناه نوع التوصية المطلوبة!"
+    msg = f"📡 **تحديث رادار الذهب التلقائي (كل 15 دقيقة)**\n\nالسعر الحالي للذهب: `{current_price}`\nاختر من الأزرار الأدناه نوع التوصية التي تريدها فوراً!"
     
     for chat_id, state in user_states.items():
         if state.get("radar_active", True):
@@ -135,11 +135,11 @@ async def gold_radar_job(context: ContextTypes.DEFAULT_TYPE):
                 logging.error(f"Failed to send radar alert to {chat_id}: {e}")
 
 # ---------------------------------------------------------
-# 7. الواجهة والأوامر
+# 7. الواجهة والأوامر (جميع الخيارات بدون تكرار)
 # ---------------------------------------------------------
 main_keyboard = [
     ["⚡️ توصية فورية (Market)", "⏳ أمر معلق (Limit Order)"],
-    ["🎯 سعر الذهب اللحظي", "📈 تحليل صورة الشارت (M5)"],
+    ["🎯 سعر الذهب اللحظي", "📈 تحليل شارت M1 / M5"],
     ["📊 كيف وضع السوق؟", "⚙️ حالة البوت والرمز"],
     ["🔄 إعادة ضبط التداول"]
 ]
@@ -149,10 +149,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     get_user_state(chat_id)
     await update.message.reply_text(
-        "👑 **أهلاً بك في نظام توصيات سكالبينج الذهب الاحترافي (Pro Engine)**\n\n"
-        "• يدعم **التوصيات الفورية** والأوامر المعلقة (**Limit Orders**).\n"
-        "• يضم **فلتر فريم الساعة (H1)** والستوب المرن.\n"
-        "• يوفر **رسائل نسخ سريع بنقرة واحدة** وأهداف مزدوجة (TP1 / TP2).",
+        "👑 **أهلاً بك في نظام توصيات سكالبينج الذهب المطور**\n\n"
+        "• **توصية فورية / معلقة تلقائية** دون الحاجة لرفع صورة.\n"
+        "• **خيارات قراءة الشارت المخصصة (M1 / M5)** عند رفع صورة.\n"
+        "• **رسائل نسخ سريع ومباشر** بنقرة واحدة لتسريع التنفيذ.",
         reply_markup=markup, parse_mode="Markdown"
     )
 
@@ -160,10 +160,10 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     state = get_user_state(chat_id)
     state.pop("exec_mode", None)
-    await update.message.reply_text("🔄 **تم إعادة ضبط التداول واختيار التنفيذ بنجاح!**", reply_markup=markup, parse_mode="Markdown")
+    await update.message.reply_text("🔄 **تم إعادة ضبط التداول بنجاح!**", reply_markup=markup, parse_mode="Markdown")
 
 # ---------------------------------------------------------
-# 8. محرك التحليل والذكاء الاصطناعي (مع دعم الفوري والمعلق)
+# 8. محرك التحليل والذكاء الاصطناعي
 # ---------------------------------------------------------
 async def process_and_analyze_image(update: Update, photo_bytes: bytes, execution_type: str = "MARKET"):
     try:
@@ -179,7 +179,7 @@ async def process_and_analyze_image(update: Update, photo_bytes: bytes, executio
         system_prompt = (
             f"أنت خبير ومدير مخاطر محترف في تداول الذهب (XAU/USD).\n"
             f"نوع التنفيذ المطلوب لهذه التحليلات هو: {mode_text}.\n"
-            "حلل الشارت المرفق بفريم 5 دقائق (M5) مع مراعاة القواعد التالية:\n"
+            "حلل الشارت المرفق مع تطبيق القواعد التالية:\n"
             "1. فحص اتجاه فريم الساعة (H1): إذا كان صاعداً يمنع البيع، وإذا كان هابطاً يمنع الشراء.\n"
             "2. إذا كان نوع التنفيذ 'MARKET'، اقترح سعر دخول فوري وقريب مع أهداف وستوب مدروس.\n"
             "3. إذا كان نوع التنفيذ 'LIMIT'، اقترح سعراً معلقاً مثالياً (BUY LIMIT أو SELL LIMIT) من مناطق دعم أو مقاومة قوية.\n"
@@ -226,7 +226,6 @@ async def process_and_analyze_image(update: Update, photo_bytes: bytes, executio
             note = data.get("note", "")
 
             if action in ["BUY", "SELL", "BUY_LIMIT", "SELL_LIMIT"]:
-                # تطبيق هامش الأمان المرن (3$) على الستوب
                 if "BUY" in action:
                     adjusted_sl = round(sl_raw - SL_BUFFER_PRICE, 2)
                 else:
@@ -245,7 +244,6 @@ async def process_and_analyze_image(update: Update, photo_bytes: bytes, executio
                     f"🛡️ **قاعدة التأمين (Breakeven):** عند وصول السعر للهدف الأول (TP1)، انقُل الستوب فوراً لسعر الدخول `{entry}`."
                 )
 
-                # رسالة النسخ السريع الصافي المنفصلة بضغطة واحدة
                 copy_block = (
                     f"📋 **بيانات النسخ السريع للصفقة (اضغط للنسخ):**\n\n"
                     f"```text\n"
@@ -288,28 +286,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"🚫 **السوق مغلق حالياً!**\nℹ️ {reason}")
             return
         state["exec_mode"] = "MARKET"
-        await update.message.reply_text("⚡️ **تم اختيار نظام (التوصية الفورية).**\n📸 جاري جلب شارت M5 وتحليله فوراً... ⏳")
+        await update.message.reply_text("⚡️ **جاري استخراج توصية فورية تلقائية من الشارت اللحظي... ⏳**")
         
         chart_bytes = fetch_live_chart_image()
         if chart_bytes:
-            await update.message.reply_photo(photo=chart_bytes, caption="🌐 **شارت M5 المباشر (توصية فورية)**")
             await process_and_analyze_image(update, chart_bytes, execution_type="MARKET")
         else:
-            await update.message.reply_text("⚠️ متعذر جلب الشارت تلقائياً. يرجى إرسال صورة الشارت يدوياً.")
+            await update.message.reply_text("⚠️ متعذر جلب بيانات الشارت تلقائياً. يمكنك رفع صورة الشارت عبر خيار '📈 تحليل شارت M1 / M5'.")
 
     elif text == "⏳ أمر معلق (Limit Order)":
         if not is_open:
             await update.message.reply_text(f"🚫 **السوق مغلق حالياً!**\nℹ️ {reason}")
             return
         state["exec_mode"] = "LIMIT"
-        await update.message.reply_text("⏳ **تم اختيار نظام (الأوامر المعلقة Limit).**\n📸 جاري جلب شارت M5 لاستخراج نقاط الـ Limit... ⏳")
+        await update.message.reply_text("⏳ **جاري حساب نقاط الأمر المعلق (Limit) تلقائياً... ⏳**")
         
         chart_bytes = fetch_live_chart_image()
         if chart_bytes:
-            await update.message.reply_photo(photo=chart_bytes, caption="🌐 **شارت M5 المباشر (أوامر معلقة)**")
             await process_and_analyze_image(update, chart_bytes, execution_type="LIMIT")
         else:
-            await update.message.reply_text("⚠️ متعذر جلب الشارت تلقائياً. يرجى إرسال صورة الشارت يدوياً.")
+            await update.message.reply_text("⚠️ متعذر جلب بيانات الشارت تلقائياً. يمكنك رفع صورة الشارت عبر خيار '📈 تحليل شارت M1 / M5'.")
+
+    elif text == "📈 تحليل شارت M1 / M5":
+        await update.message.reply_text("📸 **أرسل الآن صورة الشارت (سواء بفريم الدقيقة M1 أو 5 دقائق M5) لنقوم بتحليلها فوراً...**")
 
     elif text == "🎯 سعر الذهب اللحظي":
         price = fetch_gold_price()
@@ -321,12 +320,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "📊 كيف وضع السوق؟":
         await update.message.reply_text(f"ℹ️ {reason}")
 
-    elif text == "📈 تحليل صورة الشارت (M5)":
-        await update.message.reply_text("📸 **أرسل صورة شارت فريم 5 دقائق (M5) الآن لنقوم بتحليلها...**")
-
     elif text == "⚙️ حالة البوت والرمز":
         status_icon = "🟢" if is_open else "🔴"
-        ai_status = "🟢 متصل (نظام M5 + H1 المطور)" if OPENROUTER_API_KEY else "🔴 غير متصل"
+        ai_status = "🟢 متصل (نظام M1/M5 Mapped)" if OPENROUTER_API_KEY else "🔴 غير متصل"
         await update.message.reply_text(f"{status_icon} **السوق:** {reason}\n📌 **الرمز:** {SYMBOL}\n📡 **الرادار:** 🟢 شغال\n🧠 **الذكاء الاصطناعي:** {ai_status}", parse_mode="Markdown")
 
     elif text == "🔄 إعادة ضبط التداول":
@@ -336,7 +332,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("يرجى استخدام الأزرار المتاحة أدناه.", reply_markup=markup)
 
 # ---------------------------------------------------------
-# 10. معالجة الصور المرفوعة يدوياً
+# 10. معالجة الصور المرفوعة يدوياً (M1 / M5)
 # ---------------------------------------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_open, reason = is_market_open()
@@ -352,8 +348,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = get_user_state(chat_id)
     exec_mode = state.get("exec_mode", "MARKET")
 
-    mode_label = "توصية فورية (Market)" if exec_mode == "MARKET" else "أمر معلق (Limit Order)"
-    await update.message.reply_text(f"⚡️ جاري تحليل الصورة المرفوعة وفق وضع ({mode_label})... ⏳")
+    await update.message.reply_text("📊 **جاري قراءة صورة الشارت المرفوعة (فريم M1 / M5) وتحليل المستويات... ⏳**")
     
     try:
         photo_file = await update.message.photo[-1].get_file()
@@ -382,7 +377,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("🚀 بوت سكالبينج الذهب يعمل بكامل الميزات الجديدة (Market + Limit + Fast Copy + H1 Filter)...")
+    print("🚀 البوت يعمل بجميع الأزرار والخيارات المكتملة بدون أي تكرار...")
     application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == '__main__':
