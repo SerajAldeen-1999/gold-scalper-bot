@@ -13,12 +13,12 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKe
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # ---------------------------------------------------------
-# إعداد السجلات (Logs)
+# إعداد السجلات (Logging)
 # ---------------------------------------------------------
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # ---------------------------------------------------------
-# 1. خادم Flask وإبقاء الخدمة مستيقظة
+# 1. خادم Flask وإبقاء البوت مستيقظاً (Keep-Alive & Self-Ping)
 # ---------------------------------------------------------
 app_web = Flask('')
 
@@ -53,7 +53,6 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
 TWELVE_DATA_API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "").strip()
 
-SYMBOL = "XAU/USD"
 SL_BUFFER_PRICE = 3.0
 user_states = {}
 
@@ -68,7 +67,32 @@ def get_user_state(chat_id: int) -> dict:
     return user_states[chat_id]
 
 # ---------------------------------------------------------
-# 3. فحص أوقات سوق الذهب (XAU/USD)
+# 3. محرك جلب الأسعار اللحظية (مع نظام الاحتياط المزدوج)
+# ---------------------------------------------------------
+def fetch_gold_price():
+    # المصدر الأول: TwelveData
+    try:
+        if TWELVE_DATA_API_KEY:
+            url = f"https://api.twelvedata.com/price?symbol=XAU/USD&apikey={TWELVE_DATA_API_KEY}"
+            res = requests.get(url, timeout=6).json()
+            if "price" in res:
+                return float(res["price"])
+    except Exception as e:
+        logging.error(f"Primary API (TwelveData) Error: {e}")
+
+    # المصدر الاحتياطي الثاني: سعر الذهب المباشر البديل
+    try:
+        url_alt = "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT"
+        res_alt = requests.get(url_alt, timeout=6).json()
+        if "price" in res_alt:
+            return float(res_alt["price"])
+    except Exception as e:
+        logging.error(f"Fallback API Error: {e}")
+    
+    return None
+
+# ---------------------------------------------------------
+# 4. فحص أوقات سوق الذهب (XAU/USD)
 # ---------------------------------------------------------
 def is_market_open() -> tuple[bool, str]:
     ny_tz = pytz.timezone("America/New_York")
@@ -86,22 +110,6 @@ def is_market_open() -> tuple[bool, str]:
         return False, "السوق مغلق حالياً لفترة التسوية اليومية (Daily Rollover)."
 
     return True, "السوق مفتوح ومتاح للتداول."
-
-# ---------------------------------------------------------
-# 4. جلب أسعار الذهب اللحظية
-# ---------------------------------------------------------
-def fetch_gold_price():
-    try:
-        if not TWELVE_DATA_API_KEY:
-            return None
-        url = f"https://api.twelvedata.com/price?symbol={SYMBOL}&apikey={TWELVE_DATA_API_KEY}"
-        res = requests.get(url, timeout=10).json()
-        if "price" in res:
-            return float(res["price"])
-        return None
-    except Exception as e:
-        logging.error(f"Error fetching gold price: {e}")
-        return None
 
 # ---------------------------------------------------------
 # 5. جلب صورة شارت حية تلقائياً للأوامر المعلقة
@@ -142,7 +150,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ---------------------------------------------------------
-# 7. محرك التحليل والذكاء الاصطناعي
+# 7. محرك التحليل والذكاء الاصطناعي (Gemini 2.5 Flash)
 # ---------------------------------------------------------
 async def process_and_analyze_image(update: Update, photo_bytes: bytes, execution_type: str = "MARKET", timeframe: str = "M5"):
     try:
@@ -194,10 +202,10 @@ async def process_and_analyze_image(update: Update, photo_bytes: bytes, executio
             data = json.loads(clean_json)
 
             action = data.get("action", "WAIT")
-            entry = data.get("entry", 0.0)
-            tp1 = data.get("tp1", 0.0)
-            tp2 = data.get("tp2", 0.0)
-            sl_raw = data.get("sl", 0.0)
+            entry = float(data.get("entry", 0.0))
+            tp1 = float(data.get("tp1", 0.0))
+            tp2 = float(data.get("tp2", 0.0))
+            sl_raw = float(data.get("sl", 0.0))
             rr = data.get("rr", "1:1.5")
             note = data.get("note", "")
 
@@ -253,21 +261,22 @@ async def process_and_analyze_image(update: Update, photo_bytes: bytes, executio
         await update.message.reply_text(f"⚠️ حدث خطأ أثناء معالجة التحليل: {str(e)}")
 
 # ---------------------------------------------------------
-# 8. الفحص الآلي للصفقات والتحديثات الدورية
+# 8. الفحص الآلي للصفقات والتحديثات الدورية المجدولة
 # ---------------------------------------------------------
-# أ) متابعة الصفقة المفتوحة (كل 15 ثانية)
+
+# أ) متابعة الصفقة المفتوحة وحالة الأهداف (كل 15 ثانية)
 async def auto_check_trades(context: ContextTypes.DEFAULT_TYPE):
     current_price = fetch_gold_price()
-    if not current_price:
+    if current_price is None:
         return
 
     for chat_id, state in list(user_states.items()):
         if state.get("in_trade") and state.get("current_trade"):
             trade = state["current_trade"]
             action = trade["action"]
-            entry = trade["entry"]
-            tp1 = trade["tp1"]
-            sl = trade["sl"]
+            entry = float(trade["entry"])
+            tp1 = float(trade["tp1"])
+            sl = float(trade["sl"])
             notified_tp1 = trade.get("notified_tp1", False)
 
             exit_kb = InlineKeyboardMarkup([
@@ -277,46 +286,48 @@ async def auto_check_trades(context: ContextTypes.DEFAULT_TYPE):
                 ]
             ])
 
+            # حالة صفقات الشراء
             if "BUY" in action:
                 if current_price >= tp1 and not notified_tp1:
                     trade["notified_tp1"] = True
                     msg = (
                         f"🎉 **تنبيه تلقائي: وصل السعر للهدف الأول (TP1)!**\n\n"
                         f"• السعر اللحظي: `{current_price}`\n"
-                        f"💡 **الإجراء:** اغلق نصف العقد وانقل الستوب لسعر الدخول (`{entry}`)."
+                        f"💡 **الإجراء:** أغلق نصف العقد وانقل الستوب لسعر الدخول (`{entry}`)."
                     )
                     await context.bot.send_message(chat_id=chat_id, text=msg, reply_markup=exit_kb, parse_mode="Markdown")
 
                 elif current_price <= sl:
                     state["in_trade"] = False
                     state["current_trade"] = None
-                    msg = f"🛑 **تنبيه تلقائي: وصل السعر للستوب لوز عند `{current_price}`!**"
+                    msg = f"🛑 **تنبيه تلقائي: وصل السعر لستوب الخسارة عند `{current_price}`!**"
                     await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
 
+            # حالة صفقات البيع
             elif "SELL" in action:
                 if current_price <= tp1 and not notified_tp1:
                     trade["notified_tp1"] = True
                     msg = (
                         f"🎉 **تنبيه تلقائي: وصل السعر للهدف الأول (TP1)!**\n\n"
                         f"• السعر اللحظي: `{current_price}`\n"
-                        f"💡 **الإجراء:** اغلق نصف العقد وانقل الستوب لسعر الدخول (`{entry}`)."
+                        f"💡 **الإجراء:** أغلق نصف العقد وانقل الستوب لسعر الدخول (`{entry}`)."
                     )
-                    await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+                    await context.bot.send_message(chat_id=chat_id, text=msg, reply_markup=exit_kb, parse_mode="Markdown")
 
                 elif current_price >= sl:
                     state["in_trade"] = False
                     state["current_trade"] = None
-                    msg = f"🛑 **تنبيه تلقائي: وصل السعر للستوب لوز عند `{current_price}`!**"
+                    msg = f"🛑 **تنبيه تلقائي: وصل السعر لستوب الخسارة عند `{current_price}`!**"
                     await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
 
-# ب) إشعارات دورية للسوق (كل 15 دقيقة)
+# ب) إشعارات وتحديثات دورية للسوق (كل 15 دقيقة)
 async def periodic_market_scanner(context: ContextTypes.DEFAULT_TYPE):
     is_open, _ = is_market_open()
     if not is_open:
         return
 
     current_price = fetch_gold_price()
-    if not current_price:
+    if current_price is None:
         return
 
     for chat_id, state in list(user_states.items()):
@@ -324,16 +335,16 @@ async def periodic_market_scanner(context: ContextTypes.DEFAULT_TYPE):
             msg = (
                 f"⏰ **التحديث الدوري للأسواق (كل 15 دقيقة):**\n\n"
                 f"🟡 **سعر الذهب اللحظي:** `{current_price}`\n"
-                f"📊 البوت يراقب حركة السوق باستمرار.\n"
-                f"💡 أرسل صورة الشارت في أي وقت للحصول على تحليل جديد."
+                f"📊 البوت يراقب الحركة ورادار الفرص يعمل.\n"
+                f"💡 أرسل صورة الشارت عند توفر حركة للحصول على تحليل جديد."
             )
             try:
                 await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
             except Exception as e:
-                logging.error(f"Failed to send periodic message to {chat_id}: {e}")
+                logging.error(f"Failed periodic push to {chat_id}: {e}")
 
 # ---------------------------------------------------------
-# 9. معالجة التفاعل الحي عبر الأزرار المدمجة
+# 9. معالجة التفاعل المباشر بالأزرار المدمجة (Inline)
 # ---------------------------------------------------------
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -410,14 +421,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         trade = state["current_trade"]
         current_price = fetch_gold_price()
-        if not current_price:
+        if current_price is None:
             await update.message.reply_text("⚠️ متعذر جلب السعر المباشر الآن.")
             return
 
-        entry = trade["entry"]
+        entry = float(trade["entry"])
         action = trade["action"]
-        tp1 = trade["tp1"]
-        sl = trade["sl"]
+        tp1 = float(trade["tp1"])
+        sl = float(trade["sl"])
 
         status_text = ""
         if "BUY" in action:
@@ -453,7 +464,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             s1 = round(price - 4.5, 2)
             s2 = round(price - 9.0, 2)
             msg = (
-                f"🎯 **مستويات الدعم والمقاومة اليومية المحسوبة (XAU/USD):**\n\n"
+                f"🎯 **مستويات الدعم والمقاومة المحسوبة (XAU/USD):**\n\n"
                 f"🔴 **المقاومة الثانية (R2):** `{r2}`\n"
                 f"🔴 **المقاومة الأولى (R1):** `{r1}`\n"
                 f"🟡 **السعر الحالي:** `{price}`\n"
@@ -477,12 +488,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         diag_report = (
             f"🛠 **تقرير الفحص والتشخيص الفعلي للبوت:**\n\n"
             f"1️⃣ **سوق الذهب:** {market_icon} ({reason})\n"
-            f"2️⃣ **مزود الأسعار (TwelveData):** {price_status}\n"
+            f"2️⃣ **مزود الأسعار اللحظية:** {price_status}\n"
             f"3️⃣ **خادم الذكاء الاصطناعي (Gemini 2.5):** {ai_status}\n"
             f"4️⃣ **رادار المتابعة الآلية بالخلفية:** 🟢 شغال (فحص الصفقات كل 15 ثانية)\n"
             f"5️⃣ **التحديثات الدورية للسوق:** 🟢 شغال (كل 15 دقيقة)\n"
-            f"6️⃣ **نظام إبقاء الخدمة مستيقظة (Keep-Alive):** 🟢 24/7 Active\n\n"
-            f"📌 **النتيجة:** البوت جاهز ويعمل بكفاءة 100% بدون أي أخطاء!"
+            f"6️⃣ **نظام إبقاء الخدمة مستيقظة (Keep-Alive):** 🟢 Active 24/7\n\n"
+            f"📌 **النتيجة:** البوت جاهز ويعمل بكفاءة 100%!"
         )
         await update.message.reply_text(diag_report, parse_mode="Markdown")
 
@@ -515,7 +526,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ حدث خطأ أثناء المعالجة: {str(e)}")
 
 # ---------------------------------------------------------
-# 12. التشغيل الرئيسي
+# 12. التشغيل الرئيسي للمشروع
 # ---------------------------------------------------------
 def main():
     keep_alive()
@@ -526,7 +537,7 @@ def main():
     builder = Application.builder().token(BOT_TOKEN)
     application = builder.build()
 
-    # تشغيل الوظائف المجدولة بالخلفية
+    # تشغيل المهام الدورية والرقابية بالخلفية
     if application.job_queue:
         # 1. متابعة الصفقات القائمة كل 15 ثانية
         application.job_queue.run_repeating(auto_check_trades, interval=15, first=10)
@@ -538,7 +549,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("🚀 البوت التفاعلي الشامل يعمل بنجاح مع نظام المتابعة والإشعارات الدورية...")
+    print("🚀 البوت الشامل يعمل الآن بنجاح وبكافة الخصائص...")
     application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == '__main__':
