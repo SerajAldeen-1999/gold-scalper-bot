@@ -138,10 +138,8 @@ def calculate_recommended_lot(balance: float, risk_pct: float, entry_price: floa
     if sl_distance == 0:
         return 0.01, risk_amount, 0.0
 
-    # في الذهب (XAU/USD): عقد 1.00 اللوت الكامل = 100 أونصة. تحرك 1$= 100$ خسارة/ربح.
-    # إذن قيمة النقطة لكل 1$ حركة = 100$ لوت كامل.
     lot = risk_amount / (sl_distance * 100.0)
-    lot = round(max(0.01, lot), 2)  # الحد أدنى 0.01 لوت
+    lot = round(max(0.01, lot), 2)
     return lot, round(risk_amount, 2), round(sl_distance, 2)
 
 # ---------------------------------------------------------
@@ -163,7 +161,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👑 **أهلاً بك في نظام التداول الخبير لصفقات الذهب (Gold Scalper AI Pro)**\n\n"
         "• **تحليل الشارتات المرفوعة وتعديل التوصيات لحظياً.**\n"
         "• **متابعة حية وتحليل فني حقيقي عند المتابعة اليدوية.**\n"
-        "• **رادار تلقائي كل 15 دقيقة ونظام تنبيهات حرج كل 60 ثانية.**\n"
+        "• **رادار تلقائي كل 15 دقيقة ونظام تنبيهات حرج كل 60 ثانية (TP1 + TP2).**\n"
         "• **حاسبة إدارة المخاطر واللوت المخصص لحسابك.**",
         reply_markup=markup, parse_mode="Markdown"
     )
@@ -232,7 +230,6 @@ async def process_and_analyze_image(update: Update, photo_bytes: bytes, executio
                 if not live_price:
                     live_price = ai_entry
 
-                # المطابقة السعرية الحية
                 if "BUY" in action:
                     zone_str = f"{round(live_price - 0.4, 2)} - {round(live_price + 0.4, 2)}"
                     diff = round(live_price - ai_entry, 2)
@@ -246,7 +243,6 @@ async def process_and_analyze_image(update: Update, photo_bytes: bytes, executio
                     final_tp2 = round(live_price - abs(ai_entry - ai_tp2), 2)
                     final_sl = round(live_price + abs(ai_sl - ai_entry) + SL_BUFFER_PRICE, 2)
 
-                # حساب اللوت الموصى به لحساب المستخدم
                 user_bal = state.get("balance", 1000.0)
                 user_risk = state.get("risk_pct", 2.0)
                 rec_lot, max_risk_usd, sl_dist = calculate_recommended_lot(user_bal, user_risk, live_price, final_sl)
@@ -331,7 +327,7 @@ async def process_and_analyze_image(update: Update, photo_bytes: bytes, executio
             await update.message.reply_text(f"⚠️ حدث خطأ أثناء معالجة التحليل: {str(e)}")
 
 # ---------------------------------------------------------
-# 9. المتابعة الآلية والحرجة (كل 60 ثانية) + الرادار (15 دقيقة)
+# 9. المتابعة الآلية والحرجة (TP1 و TP2 و SL) + الرادار
 # ---------------------------------------------------------
 async def auto_check_trades(context: ContextTypes.DEFAULT_TYPE):
     current_price = fetch_gold_price()
@@ -345,6 +341,7 @@ async def auto_check_trades(context: ContextTypes.DEFAULT_TYPE):
                 action = trade["action"]
                 entry = float(trade["entry"])
                 tp1 = float(trade["tp1"])
+                tp2 = float(trade["tp2"])
                 sl = float(trade["sl"])
                 notified_tp1 = trade.get("notified_tp1", False)
 
@@ -355,39 +352,68 @@ async def auto_check_trades(context: ContextTypes.DEFAULT_TYPE):
                     ]
                 ])
 
+                # --- صفقات الشراء (BUY / BUY_LIMIT) ---
                 if "BUY" in action:
-                    if current_price >= tp1 and not notified_tp1:
+                    # 1. فحص الوصول للهدف الثاني والأخير (TP2)
+                    if current_price >= tp2:
+                        state["in_trade"] = False
+                        state["current_trade"] = None
+                        msg = (
+                            f"🚀🚀 **مبروك! وصل السعر للهدف الثاني والأخير (TP2) عند `{current_price}`!**\n\n"
+                            f"✅ **تم تحقيق جميع أهداف الصفقة بالكامل بنجاح 🎯**\n"
+                            f"👉 تم إغلاق ملف الصفقة تلقائياً. جاهزون للفرصة القادمة!"
+                        )
+                        await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+
+                    # 2. فحص الوصول للهدف الأول (TP1)
+                    elif current_price >= tp1 and not notified_tp1:
                         trade["notified_tp1"] = True
-                        trade["sl"] = entry
+                        trade["sl"] = entry  # نقل الستوب تلقائياً لسعر الدخول
                         msg = (
                             f"🎉 **تنبيه حرج: وصل السعر للهدف الأول (TP1) عند `{current_price}`!**\n\n"
                             f"💡 **الإجراء الآلي:** تم نقل الستوب تلقائياً لسعر الدخول (`{entry}`).\n"
-                            f"👉 أغلق نصف العقد الآن واترك المتبقي للهدف الثاني!"
+                            f"👉 أغلق نصف العقد الآن واترك المتبقي للهدف الثاني (`{tp2}`)!"
                         )
                         await context.bot.send_message(chat_id=chat_id, text=msg, reply_markup=exit_kb, parse_mode="Markdown")
 
+                    # 3. فحص ضرب الستوب
                     elif current_price <= sl:
                         state["in_trade"] = False
                         state["current_trade"] = None
                         msg = f"🛑 **تنبيه حرج: وصل السعر لستوب الخسارة عند `{current_price}`!** تم إغلاق ملف الصفقة."
                         await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
 
+                # --- صفقات البيع (SELL / SELL_LIMIT) ---
                 elif "SELL" in action:
-                    if current_price <= tp1 and not notified_tp1:
+                    # 1. فحص الوصول للهدف الثاني والأخير (TP2)
+                    if current_price <= tp2:
+                        state["in_trade"] = False
+                        state["current_trade"] = None
+                        msg = (
+                            f"🚀🚀 **مبروك! وصل السعر للهدف الثاني والأخير (TP2) عند `{current_price}`!**\n\n"
+                            f"✅ **تم تحقيق جميع أهداف الصفقة بالكامل بنجاح 🎯**\n"
+                            f"👉 تم إغلاق ملف الصفقة تلقائياً. جاهزون للفرصة القادمة!"
+                        )
+                        await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+
+                    # 2. فحص الوصول للهدف الأول (TP1)
+                    elif current_price <= tp1 and not notified_tp1:
                         trade["notified_tp1"] = True
-                        trade["sl"] = entry
+                        trade["sl"] = entry  # نقل الستوب تلقائياً لسعر الدخول
                         msg = (
                             f"🎉 **تنبيه حرج: وصل السعر للهدف الأول (TP1) عند `{current_price}`!**\n\n"
                             f"💡 **الإجراء الآلي:** تم نقل الستوب تلقائياً لسعر الدخول (`{entry}`).\n"
-                            f"👉 أغلق نصف العقد الآن واترك المتبقي للهدف الثاني!"
+                            f"👉 أغلق نصف العقد الآن واترك المتبقي للهدف الثاني (`{tp2}`)!"
                         )
                         await context.bot.send_message(chat_id=chat_id, text=msg, reply_markup=exit_kb, parse_mode="Markdown")
 
+                    # 3. فحص ضرب الستوب
                     elif current_price >= sl:
                         state["in_trade"] = False
                         state["current_trade"] = None
                         msg = f"🛑 **تنبيه حرج: وصل السعر لستوب الخسارة عند `{current_price}`!** تم إغلاق ملف الصفقة."
                         await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+
         except Exception as e:
             logging.error(f"Error in auto_check_trades for {chat_id}: {e}")
 
@@ -432,7 +458,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 f"🟢 **تم تفعيل المتابعة التلقائية الحية بالخلفية!**\n\n"
                 f"• الصفقة: `{trade['action']}` من سعر `{trade['entry']}`\n"
-                f"• يفحص البوت السعر كل 60 ثانية... وسيرسل إشعاراً فورياً عند أي جديد!",
+                f"• يفحص البوت السعر كل 60 ثانية... وسيرسل إشعاراً فورياً عند الوصول لـ TP1 و TP2 و SL!",
                 parse_mode="Markdown"
             )
     
@@ -447,10 +473,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("✅ **ممتاز! تم إغلاق ملف الصفقة بنجاح.** نتمنى لك أرباحاً وفيرة 🚀")
 
     elif query.data == "trade_still_open":
-        await query.edit_message_text("⏳ **سأستمر في متابعة الصفقة معك كل دقيقة بالخلفية...**")
+        await query.edit_message_text("⏳ **سأستمر في متابعة الصفقة معك كل دقيقة بالخلفية حتى TP2...**")
 
 # ---------------------------------------------------------
-# 11. معالجة الرسائل والأزرار الرئيسية + المتابعة اليدوية الحقيقية
+# 11. معالجة الرسائل والأزرار الرئيسية
 # ---------------------------------------------------------
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -458,7 +484,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = get_user_state(chat_id)
     is_open, reason = is_market_open()
 
-    # فحص إذا كان العضو يريد ضبط رأس المال والنسبة بالمتن النصي
     if ("حسابي" in text or "رأس مالي" in text) and ("مخاطرة" in text or "%" in text):
         nums = re.findall(r'\d+(?:\.\d+)?', text)
         if len(nums) >= 2:
@@ -499,7 +524,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if chart_bytes:
             await process_and_analyze_image(update, chart_bytes, execution_type="LIMIT", timeframe="M5")
 
-    # --- المتابعة اليدوية الحقيقية بذكاء اصطناعي وشارت حي ---
     elif text == "🚨 متابعة وتحديث الصفقة الحالية":
         if not state.get("in_trade") or not state.get("current_trade"):
             await update.message.reply_text("ℹ️ **أنت لست داخل صفقة حالياً.** اطلب تحليل/توصية أولاً واضغط '✅ دخلت الصفقة' لتفعيل المتابعة.")
@@ -544,7 +568,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logging.error(f"Error in manual tracking AI call: {e}")
 
-        if ("BUY" in action and current_price >= tp1) or ("SELL" in action and current_price <= tp1):
+        if ("BUY" in action and current_price >= tp2) or ("SELL" in action and current_price <= tp2):
+            status_text = f"🚀 **تم الوصول للهدف الثاني والأخير (TP2) عند `{current_price}`!**\n💡 يُنصح بإغلاق كافة العقود وجني الأرباح."
+        elif ("BUY" in action and current_price >= tp1) or ("SELL" in action and current_price <= tp1):
             status_text = f"🎉 **تم الوصول للهدف الأول (TP1) عند `{current_price}`!**\n💡 تم نقل الستوب تلقائياً إلى نقطة الدخول (`{entry}`)."
         elif ("BUY" in action and current_price <= sl) or ("SELL" in action and current_price >= sl):
             status_text = f"🛑 **تنبيه حرج:** السعر تجاوز منطقة الستوب عند `{current_price}`."
@@ -621,7 +647,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"2️⃣ **مزود الأسعار اللحظية:** {price_status}\n"
             f"3️⃣ **خادم الذكاء الاصطناعي (Gemini 2.5):** {ai_status}\n"
             f"4️⃣ **المتابعة اليدوية الذكية:** 🟢 شغال (تحليل الشارت الحي)\n"
-            f"5️⃣ **رادار المتابعة الآلية:** 🟢 شغال (فحص الصفقات كل 60 ثانية)\n"
+            f"5️⃣ **رادار المتابعة الآلية:** 🟢 شغال (متابعة حية لـ TP1 و TP2 كل 60 ثانية)\n"
             f"6️⃣ **الرادار التلقائي للفرص:** 🟢 شغال (تحليل الشارت كل 15 دقيقة)\n"
             f"7️⃣ **حاسبة اللوت المخصصة:** 🟢 شغال (`${state.get('balance')}` - `{state.get('risk_pct')}%`)\n\n"
             f"📌 **النتيجة:** البوت جاهز ومكتمل بكفاءة 100%!"
